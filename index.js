@@ -22,70 +22,81 @@ client.once("ready", async () => {
   const onDutyChannelId = process.env.ON_DUTY_CHANNEL_ID;
   const rescueChannelId = process.env.RESCUE_CHANNEL_ID;
 
-  console.log("DEBUG ON_DUTY_CHANNEL_ID:", onDutyChannelId);
-  console.log("DEBUG RESCUE_CHANNEL_ID:", rescueChannelId);
-
   if (!onDutyChannelId || !rescueChannelId) {
-    console.log("❌ Missing channel IDs in env vars. Set ON_DUTY_CHANNEL_ID and RESCUE_CHANNEL_ID in Railway Variables.");
+    console.log("❌ Missing channel IDs in env vars.");
     return;
   }
 
-  // ON DUTY PANEL
-  const onDutyChannel = await client.channels.fetch(onDutyChannelId).catch((e) => {
-    console.error("❌ Failed to fetch on-duty channel:", e);
-    return null;
-  });
+  const onDutyChannel = await client.channels.fetch(onDutyChannelId);
+  const rescueChannel = await client.channels.fetch(rescueChannelId);
 
-  if (onDutyChannel) {
+  // ----- ON DUTY PANEL -----
+  const dutyRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("toggle_duty")
+      .setLabel("Toggle On/Off Duty")
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  let dutyMessage;
+
+  if (process.env.ON_DUTY_PANEL_ID) {
     try {
-      const dutyRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("toggle_duty")
-          .setLabel("Toggle On/Off Duty")
-          .setStyle(ButtonStyle.Secondary)
-      );
-
-      await onDutyChannel.send({
+      dutyMessage = await onDutyChannel.messages.fetch(process.env.ON_DUTY_PANEL_ID);
+      await dutyMessage.edit({
         content: "🟣 **Phoenix Squadron — Duty Status**\n\nToggle your response status below.",
         components: [dutyRow],
       });
-
-      console.log("✅ Posted on-duty panel.");
-    } catch (e) {
-      console.error("❌ Failed to send on-duty panel:", e);
+      console.log("✅ Updated existing On Duty panel.");
+    } catch {
+      dutyMessage = await onDutyChannel.send({
+        content: "🟣 **Phoenix Squadron — Duty Status**\n\nToggle your response status below.",
+        components: [dutyRow],
+      });
+      console.log("🆕 Created new On Duty panel:", dutyMessage.id);
     }
   } else {
-    console.log("❌ onDutyChannel is null (wrong ID or missing access).");
+    dutyMessage = await onDutyChannel.send({
+      content: "🟣 **Phoenix Squadron — Duty Status**\n\nToggle your response status below.",
+      components: [dutyRow],
+    });
+    console.log("🆕 Created new On Duty panel:", dutyMessage.id);
   }
 
-  // RESCUE PANEL
-  const rescueChannel = await client.channels.fetch(rescueChannelId).catch((e) => {
-    console.error("❌ Failed to fetch rescue channel:", e);
-    return null;
-  });
+  // ----- RESCUE PANEL -----
+  const rescueRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("request_rescue")
+      .setLabel("Request Extraction")
+      .setStyle(ButtonStyle.Danger)
+  );
 
-  if (rescueChannel) {
+  let rescueMessage;
+
+  if (process.env.RESCUE_PANEL_ID) {
     try {
-      const rescueRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-          .setCustomId("request_rescue")
-          .setLabel("Request Extraction")
-          .setStyle(ButtonStyle.Danger)
-      );
-
-      await rescueChannel.send({
+      rescueMessage = await rescueChannel.messages.fetch(process.env.RESCUE_PANEL_ID);
+      await rescueMessage.edit({
         content: "🚨 **Request Extraction / Medical Support**\n\nPress below to open a private rescue ticket.",
         components: [rescueRow],
       });
-
-      console.log("✅ Posted rescue panel.");
-    } catch (e) {
-      console.error("❌ Failed to send rescue panel:", e);
+      console.log("✅ Updated existing Rescue panel.");
+    } catch {
+      rescueMessage = await rescueChannel.send({
+        content: "🚨 **Request Extraction / Medical Support**\n\nPress below to open a private rescue ticket.",
+        components: [rescueRow],
+      });
+      console.log("🆕 Created new Rescue panel:", rescueMessage.id);
     }
   } else {
-    console.log("❌ rescueChannel is null (wrong ID or missing access).");
+    rescueMessage = await rescueChannel.send({
+      content: "🚨 **Request Extraction / Medical Support**\n\nPress below to open a private rescue ticket.",
+      components: [rescueRow],
+    });
+    console.log("🆕 Created new Rescue panel:", rescueMessage.id);
   }
 });
+
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
