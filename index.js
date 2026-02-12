@@ -292,27 +292,47 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // CLAIM
-  if (interaction.customId === "claim_rescue") {
-    await logEvent(
-      interaction.guild,
-      `🔒 **Rescue Claimed** — <@${interaction.user.id}> claimed ${interaction.channel}`
-    );
+ // CLAIM
+if (interaction.customId === "claim_rescue") {
+  const channel = interaction.channel;
+
+  // Prevent double-claim
+  if (channel.topic && channel.topic.includes("CLAIMED_BY:")) {
     return interaction.reply({
-      content: `🔒 Rescue claimed by <@${interaction.user.id}>`,
+      content: "⚠️ This rescue has already been claimed.",
+      ephemeral: true,
     });
   }
 
-  // CLOSE
-  if (interaction.customId === "close_rescue") {
-    await logEvent(
-      interaction.guild,
-      `✅ **Rescue Closed** — <@${interaction.user.id}> closed ${interaction.channel}`
-    );
-    await interaction.reply({ content: "Closing ticket in 5 seconds..." });
-    setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+  // Update channel topic to mark claimed
+  const newTopic = `${channel.topic || ""} | CLAIMED_BY:${interaction.user.id}`;
+  await channel.setTopic(newTopic);
+
+  // Get first message (the dispatch message)
+  const messages = await channel.messages.fetch({ limit: 10 });
+  const firstMessage = messages.last();
+
+  if (firstMessage) {
+    const updatedContent =
+      firstMessage.content +
+      `\n\n🩺 **Assigned Medic:** <@${interaction.user.id}>`;
+
+    await firstMessage.edit({
+      content: updatedContent,
+      components: firstMessage.components,
+    });
   }
-});
+
+  await logEvent(
+    interaction.guild,
+    `🔒 **Rescue Claimed** — <@${interaction.user.id}> claimed ${channel}`
+  );
+
+  return interaction.reply({
+    content: `🔒 You have claimed this rescue.`,
+    ephemeral: true,
+  });
+}
 
 
 // ---------- Login ----------
