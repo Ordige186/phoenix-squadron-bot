@@ -109,3 +109,40 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 client.login(process.env.TOKEN);
+process.on("unhandledRejection", (err) => console.error("unhandledRejection:", err));
+process.on("uncaughtException", (err) => console.error("uncaughtException:", err));
+
+const {
+  Client,
+  GatewayIntentBits,
+  PermissionsBitField,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle
+} = require("discord.js");
+
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
+});
+
+const ON_DUTY_ROLE = "Phoenix On Duty";
+
+client.once("ready", () => {
+  console.log(`🟣 Phoenix Squadron Bot Online as ${client.user.tag}`);
+});
+
+client.on("error", (e) => console.error("Client error:", e));
+client.on("warn", (w) => console.warn("Client warn:", w));
+
+/* --- your existing interactionCreate code stays the same here --- */
+
+const token = process.env.TOKEN;
+if (!token || token.trim().length < 20) {
+  console.error("❌ TOKEN env var missing or looks wrong. Set Railway Variable TOKEN and redeploy.");
+  process.exit(1);
+}
+
+client.login(token).catch((e) => {
+  console.error("❌ Login failed:", e);
+  process.exit(1);
+});
