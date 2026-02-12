@@ -208,6 +208,12 @@ client.on("interactionCreate", async (interaction) => {
           },
         ],
       });
+// ✅ Force bot access even if category perms are weird
+await channel.permissionOverwrites.edit(guild.members.me.id, {
+  ViewChannel: true,
+  SendMessages: true,
+  ReadMessageHistory: true,
+});
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId("claim_rescue").setLabel("🔒 Claim Rescue").setStyle(ButtonStyle.Primary),
