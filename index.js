@@ -18,6 +18,7 @@ const client = new Client({
 });
 
 const ON_DUTY_ROLE = "Phoenix On Duty";
+
 const RESCUE_MODAL_ID = "rescue_request_modal";
 const RESCUE_REPORT_MODAL_ID = "rescue_report_modal";
 
@@ -48,8 +49,9 @@ function buildRescueEmbed() {
     description:
       "Press below to open a **private rescue ticket**.\n\n" +
       "You’ll be prompted for:\n" +
+      "• In-game name (IGN)\n" +
       "• System\n" +
-      "• Planet / Moon\n" +
+      "• Planet / Moon / POI\n" +
       "• Hostiles\n" +
       "• Notes",
     color: 0x6a0dad,
@@ -89,16 +91,14 @@ async function refreshDutyPanel() {
 }
 
 function buildRescueModal() {
-  const modal = new ModalBuilder()
-    .setCustomId(RESCUE_MODAL_ID)
-    .setTitle("Phoenix Rescue Request");
+  const modal = new ModalBuilder().setCustomId(RESCUE_MODAL_ID).setTitle("Phoenix Rescue Request");
 
   const ignInput = new TextInputBuilder()
-  .setCustomId("ign")
-  .setLabel("In-game name (IGN)")
-  .setStyle(TextInputStyle.Short)
-  .setPlaceholder("e.g., Benito")
-  .setRequired(true);
+    .setCustomId("ign")
+    .setLabel("In-game name (IGN)")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("e.g., MikeOrtiz")
+    .setRequired(true);
 
   const systemInput = new TextInputBuilder()
     .setCustomId("system")
@@ -138,10 +138,9 @@ function buildRescueModal() {
 
   return modal;
 }
+
 function buildRescueReportModal() {
-  const modal = new ModalBuilder()
-    .setCustomId(RESCUE_REPORT_MODAL_ID)
-    .setTitle("Phoenix Rescue Report");
+  const modal = new ModalBuilder().setCustomId(RESCUE_REPORT_MODAL_ID).setTitle("Phoenix Rescue Report");
 
   const outcome = new TextInputBuilder()
     .setCustomId("outcome")
@@ -159,7 +158,7 @@ function buildRescueReportModal() {
 
   const threats = new TextInputBuilder()
     .setCustomId("threats")
-    .setLabel("Hostiles / Threats encountered (optional)")
+    .setLabel("Hostiles / Threats (optional)")
     .setStyle(TextInputStyle.Short)
     .setPlaceholder("None / Light / Heavy (details)")
     .setRequired(false);
@@ -181,6 +180,16 @@ function buildRescueReportModal() {
   return modal;
 }
 
+function parseTicketInfo(channel) {
+  const topic = channel?.topic || "";
+  const requesterMatch = topic.match(/Rescue ticket for (\d+)/);
+  const claimedMatch = topic.match(/CLAIMED_BY:(\d+)/);
+  return {
+    requesterId: requesterMatch ? requesterMatch[1] : null,
+    claimedById: claimedMatch ? claimedMatch[1] : null,
+  };
+}
+
 // ---------- Startup: update panels (no duplicates) ----------
 client.once("ready", async () => {
   console.log(`🟣 Phoenix Squadron Bot Online as ${client.user.tag}`);
@@ -191,9 +200,7 @@ client.once("ready", async () => {
   const rescuePanelId = process.env.RESCUE_PANEL_ID;
 
   if (!onDutyChannelId || !rescueChannelId || !dutyPanelId || !rescuePanelId) {
-    console.log(
-      "❌ Missing env vars. Required: ON_DUTY_CHANNEL_ID, RESCUE_CHANNEL_ID, ON_DUTY_PANEL_ID, RESCUE_PANEL_ID"
-    );
+    console.log("❌ Missing env vars: ON_DUTY_CHANNEL_ID, RESCUE_CHANNEL_ID, ON_DUTY_PANEL_ID, RESCUE_PANEL_ID");
     return;
   }
 
@@ -201,26 +208,20 @@ client.once("ready", async () => {
   const rescueChannel = await client.channels.fetch(rescueChannelId).catch(() => null);
 
   if (!onDutyChannel || !onDutyChannel.isTextBased()) {
-    console.log("❌ Could not access ON_DUTY_CHANNEL_ID (wrong ID or missing access).");
+    console.log("❌ Could not access ON_DUTY_CHANNEL_ID.");
     return;
   }
   if (!rescueChannel || !rescueChannel.isTextBased()) {
-    console.log("❌ Could not access RESCUE_CHANNEL_ID (wrong ID or missing access).");
+    console.log("❌ Could not access RESCUE_CHANNEL_ID.");
     return;
   }
 
   const dutyRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("toggle_duty")
-      .setLabel("Toggle On/Off Duty")
-      .setStyle(ButtonStyle.Secondary)
+    new ButtonBuilder().setCustomId("toggle_duty").setLabel("Toggle On/Off Duty").setStyle(ButtonStyle.Secondary)
   );
 
   const rescueRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("request_rescue")
-      .setLabel("Request Extraction")
-      .setStyle(ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId("request_rescue").setLabel("Request Extraction").setStyle(ButtonStyle.Danger)
   );
 
   const dutyMsg = await onDutyChannel.messages.fetch(dutyPanelId).catch(() => null);
@@ -247,53 +248,13 @@ client.on("interactionCreate", async (interaction) => {
     const guild = interaction.guild;
     const member = interaction.member;
     const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
-// RESCUE REPORT MODAL SUBMIT
-if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_ID) {
-  try {
-    // Always respond quickly so Discord doesn't show "Interaction Failed"
-    await interaction.deferReply({ ephemeral: true });
-
-    const channel = interaction.channel; // ticket channel
-    const guild = interaction.guild;
-
-    const outcome = interaction.fields.getTextInputValue("outcome");
-    const summary = interaction.fields.getTextInputValue("summary");
-    const threats = interaction.fields.getTextInputValue("threats") || "—";
-    const lessons = interaction.fields.getTextInputValue("lessons") || "—";
-
-    await logEvent(
-      guild,
-      `📝 **Rescue Report Submitted**\n` +
-        `• **Ticket:** ${channel}\n` +
-        `• **Submitted By:** <@${interaction.user.id}>\n` +
-        `• **Outcome:** ${outcome}\n` +
-        `• **Threats:** ${threats}\n` +
-        `• **Summary:** ${summary}\n` +
-        `• **Notes:** ${lessons}`
-    );
-
-    await interaction.editReply("✅ Report submitted. Closing ticket in 5 seconds...");
-    setTimeout(() => channel.delete().catch(() => {}), 5000);
-    return;
-  } catch (e) {
-    console.error("❌ Rescue report modal submit failed:", e);
-    // If deferReply failed, try a normal reply
-    if (!interaction.replied && !interaction.deferred) {
-      return interaction.reply({ content: "❌ Report failed to submit. Check logs.", ephemeral: true });
-    }
-    return interaction.editReply("❌ Report failed to submit. Check logs.");
-  }
-}
 
     // TOGGLE DUTY
     if (interaction.customId === "toggle_duty") {
-      if (!role) {
-        return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
-      }
+      if (!role) return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
 
       try {
         const wasOnDuty = member.roles.cache.has(role.id);
-
         if (wasOnDuty) await member.roles.remove(role);
         else await member.roles.add(role);
 
@@ -314,15 +275,11 @@ if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_
 
     // REQUEST RESCUE -> SHOW MODAL
     if (interaction.customId === "request_rescue") {
-      if (!role) {
-        return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
-      }
+      if (!role) return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
 
-      // one-ticket-per-user (by topic)
       const existing = guild.channels.cache.find(
         (c) => c.type === 0 && c.topic === `Rescue ticket for ${interaction.user.id}`
       );
-
       if (existing) {
         return interaction.reply({
           content: `⚠️ You already have an active rescue ticket: ${existing}`,
@@ -330,8 +287,7 @@ if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_
         });
       }
 
-      const modal = buildRescueModal();
-      return interaction.showModal(modal);
+      return interaction.showModal(buildRescueModal());
     }
 
     // CLAIM (Assigned Medic + lock)
@@ -354,83 +310,37 @@ if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_
           const updatedContent = alreadyHasAssigned
             ? oldest.content
             : `${oldest.content}\n\n🩺 **Assigned Medic:** <@${interaction.user.id}>`;
-
           await oldest.edit({ content: updatedContent, components: oldest.components }).catch(() => {});
         }
       }
 
       await logEvent(interaction.guild, `🔒 **Rescue Claimed** — <@${interaction.user.id}> claimed ${channel}`);
-
       return interaction.reply({ content: "🔒 You have claimed this rescue.", ephemeral: true });
     }
 
-    // CLOSE
+    // CLOSE -> OPEN REPORT MODAL
     if (interaction.customId === "close_rescue") {
-  const modal = buildRescueReportModal();
-  return interaction.showModal(modal);
-}
-
+      return interaction.showModal(buildRescueReportModal());
+    }
 
     return;
   }
 
-  // MODAL SUBMIT
+  // RESCUE REQUEST MODAL SUBMIT
   if (interaction.isModalSubmit() && interaction.customId === RESCUE_MODAL_ID) {
     const guild = interaction.guild;
     const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
 
-    if (!role) {
-      return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
-    }
+    if (!role) return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
 
-    if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_ID) {
-  try {
-    const channel = interaction.channel; // the ticket channel where the modal was opened
-    const guild = interaction.guild;
-
-    const { requesterId, claimedById } = parseTicketInfo(channel);
-
-    const outcome = interaction.fields.getTextInputValue("outcome");
-    const summary = interaction.fields.getTextInputValue("summary");
-    const threats = interaction.fields.getTextInputValue("threats") || "—";
-    const lessons = interaction.fields.getTextInputValue("lessons") || "—";
-
-    const requesterTag = requesterId ? `<@${requesterId}>` : "Unknown";
-    const assignedTag = claimedById ? `<@${claimedById}>` : "Unassigned";
-
-    await logEvent(
-      guild,
-      `📝 **Rescue Report Submitted**\n` +
-        `• **Ticket:** ${channel}\n` +
-        `• **Requester:** ${requesterTag}\n` +
-        `• **Assigned Medic:** ${assignedTag}\n` +
-        `• **Submitted By:** <@${interaction.user.id}>\n` +
-        `• **Outcome:** ${outcome}\n` +
-        `• **Threats:** ${threats}\n` +
-        `• **Summary:** ${summary}\n` +
-        `• **Notes:** ${lessons}`
-    );
-
-    await interaction.reply({ content: "✅ Report submitted. Closing ticket in 5 seconds...", ephemeral: true });
-    setTimeout(() => channel.delete().catch(() => {}), 5000);
-  } catch (e) {
-    console.error("❌ Failed to submit rescue report:", e);
-    return interaction.reply({
-      content: "❌ Could not submit report. Check bot permissions.",
-      ephemeral: true,
-    });
-  }
-}
     try {
-      // one-ticket-per-user check again (in case of race)
+      await interaction.deferReply({ ephemeral: true });
+
       const existing = guild.channels.cache.find(
         (c) => c.type === 0 && c.topic === `Rescue ticket for ${interaction.user.id}`
       );
       if (existing) {
-        return interaction.reply({
-          content: `⚠️ You already have an active rescue ticket: ${existing}`,
-          ephemeral: true,
-        });
+        return interaction.editReply(`⚠️ You already have an active rescue ticket: ${existing}`);
       }
 
       const ign = interaction.fields.getTextInputValue("ign");
@@ -478,7 +388,7 @@ if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_
         ],
       });
 
-      // extra safety
+      // safety vs category perms
       await channel.permissionOverwrites.edit(guild.members.me.id, {
         ViewChannel: true,
         SendMessages: true,
@@ -490,8 +400,6 @@ if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_
         new ButtonBuilder().setCustomId("close_rescue").setLabel("✅ Close Ticket").setStyle(ButtonStyle.Danger)
       );
 
-      const activeMedics = getOnDutyCount(guild);
-
       const details =
         `🎮 **IGN:** ${ign}\n` +
         `📍 **System:** ${system}\n` +
@@ -499,11 +407,11 @@ if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_
         `⚔️ **Hostiles:** ${hostiles}\n` +
         `📝 **Notes:** ${notes}`;
 
+      const activeMedics = getOnDutyCount(guild);
+
       if (activeMedics > 0) {
         await channel.send({
-          content:
-            `🚨 <@&${role.id}> Rescue request from <@${interaction.user.id}>\n\n` +
-            details,
+          content: `🚨 <@&${role.id}> Rescue request from <@${interaction.user.id}>\n\n${details}`,
           components: [row],
         });
       } else {
@@ -511,25 +419,62 @@ if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_
           content:
             `🚨 Rescue request from <@${interaction.user.id}>\n\n` +
             `⚠️ **No Phoenix medics are currently On Duty.** Response may be delayed.\n\n` +
-            details,
+            `${details}`,
           components: [row],
         });
-
         await logEvent(guild, `⚠️ **No Medics Available** — Rescue opened by <@${interaction.user.id}>`);
       }
 
       await logEvent(guild, `🆕 **Rescue Opened** — <@${interaction.user.id}> in ${channel}`);
-
-      return interaction.reply({
-        content: `🚑 Rescue channel created: ${channel}`,
-        ephemeral: true,
-      });
+      return interaction.editReply(`🚑 Rescue channel created: ${channel}`);
     } catch (e) {
-      console.error("❌ Failed to handle rescue modal submit:", e);
-      return interaction.reply({
-        content: "❌ Something went wrong creating the rescue ticket. Check bot permissions.",
-        ephemeral: true,
-      });
+      console.error("❌ Rescue request modal submit failed:", e);
+      if (!interaction.replied) {
+        return interaction.reply({ content: "❌ Failed to create ticket. Check logs.", ephemeral: true });
+      }
+    }
+  }
+
+  // RESCUE REPORT MODAL SUBMIT
+  if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_ID) {
+    try {
+      await interaction.deferReply({ ephemeral: true });
+
+      const channel = interaction.channel;
+      const guild = interaction.guild;
+
+      const { requesterId, claimedById } = parseTicketInfo(channel);
+
+      const outcome = interaction.fields.getTextInputValue("outcome");
+      const summary = interaction.fields.getTextInputValue("summary");
+      const threats = interaction.fields.getTextInputValue("threats") || "—";
+      const lessons = interaction.fields.getTextInputValue("lessons") || "—";
+
+      const requesterTag = requesterId ? `<@${requesterId}>` : "Unknown";
+      const assignedTag = claimedById ? `<@${claimedById}>` : "Unassigned";
+
+      await logEvent(
+        guild,
+        `📝 **Rescue Report Submitted**\n` +
+          `• **Ticket:** ${channel}\n` +
+          `• **Requester:** ${requesterTag}\n` +
+          `• **Assigned Medic:** ${assignedTag}\n` +
+          `• **Submitted By:** <@${interaction.user.id}>\n` +
+          `• **Outcome:** ${outcome}\n` +
+          `• **Threats:** ${threats}\n` +
+          `• **Summary:** ${summary}\n` +
+          `• **Notes:** ${lessons}`
+      );
+
+      await interaction.editReply("✅ Report submitted. Closing ticket in 5 seconds...");
+      setTimeout(() => channel.delete().catch(() => {}), 5000);
+      return;
+    } catch (e) {
+      console.error("❌ Rescue report modal submit failed:", e);
+      if (!interaction.replied && !interaction.deferred) {
+        return interaction.reply({ content: "❌ Report failed to submit. Check logs.", ephemeral: true });
+      }
+      return interaction.editReply("❌ Report failed to submit. Check logs.");
     }
   }
 });
