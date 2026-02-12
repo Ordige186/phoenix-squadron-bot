@@ -154,7 +154,10 @@ client.on("interactionCreate", async (interaction) => {
   // TOGGLE DUTY
   if (interaction.customId === "toggle_duty") {
     if (!role) {
-      return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
+      return interaction.reply({
+        content: "❌ Role not found: Phoenix On Duty",
+        ephemeral: true,
+      });
     }
 
     try {
@@ -169,13 +172,15 @@ client.on("interactionCreate", async (interaction) => {
       await refreshDutyPanel();
 
       return interaction.reply({
-        content: wasOnDuty ? "🟣 You are now **OFF Duty**." : "🟣 You are now **ON Duty**.",
+        content: wasOnDuty
+          ? "🟣 You are now **OFF Duty**."
+          : "🟣 You are now **ON Duty**.",
         ephemeral: true,
       });
     } catch (e) {
       console.error("❌ Failed to toggle duty:", e);
       return interaction.reply({
-        content: "❌ I couldn't change your role. Check role hierarchy + Manage Roles permission.",
+        content: "❌ I couldn't change your role. Check permissions.",
         ephemeral: true,
       });
     }
@@ -184,11 +189,13 @@ client.on("interactionCreate", async (interaction) => {
   // REQUEST RESCUE
   if (interaction.customId === "request_rescue") {
     if (!role) {
-      return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
+      return interaction.reply({
+        content: "❌ Role not found: Phoenix On Duty",
+        ephemeral: true,
+      });
     }
 
     try {
-      // ✅ One-ticket-per-user check (by topic)
       const existing = guild.channels.cache.find(
         (c) => c.type === 0 && c.topic === `Rescue ticket for ${interaction.user.id}`
       );
@@ -208,12 +215,10 @@ client.on("interactionCreate", async (interaction) => {
       const channel = await guild.channels.create({
         name: channelName,
         parent: process.env.TICKET_CATEGORY_ID,
-        type: 0, // GuildText
+        type: 0,
         topic: `Rescue ticket for ${interaction.user.id}`,
         permissionOverwrites: [
           { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-
-          // ✅ Allow the bot
           {
             id: guild.members.me.id,
             allow: [
@@ -222,8 +227,6 @@ client.on("interactionCreate", async (interaction) => {
               PermissionsBitField.Flags.ReadMessageHistory,
             ],
           },
-
-          // Allow requester
           {
             id: interaction.user.id,
             allow: [
@@ -232,8 +235,6 @@ client.on("interactionCreate", async (interaction) => {
               PermissionsBitField.Flags.ReadMessageHistory,
             ],
           },
-
-          // Allow on-duty role
           {
             id: role.id,
             allow: [
@@ -243,13 +244,6 @@ client.on("interactionCreate", async (interaction) => {
             ],
           },
         ],
-      });
-
-      // ✅ Extra safety against category perms
-      await channel.permissionOverwrites.edit(guild.members.me.id, {
-        ViewChannel: true,
-        SendMessages: true,
-        ReadMessageHistory: true,
       });
 
       const row = new ActionRowBuilder().addComponents(
@@ -265,26 +259,37 @@ client.on("interactionCreate", async (interaction) => {
 
       const activeMedics = getOnDutyCount(guild);
 
-if (activeMedics > 0) {
-  await channel.send({
-    content: `🚨 <@&${role.id}> Rescue request from <@${interaction.user.id}>`,
-    components: [row],
-  });
-} else {
-  await channel.send({
-    content:
-      `🚨 Rescue request from <@${interaction.user.id}>\n\n` +
-      `⚠️ **No Phoenix medics are currently On Duty.**\n` +
-      `Your ticket is open, but response may be delayed.`,
-    components: [row],
-  });
+      if (activeMedics > 0) {
+        await channel.send({
+          content: `🚨 <@&${role.id}> Rescue request from <@${interaction.user.id}>`,
+          components: [row],
+        });
+      } else {
+        await channel.send({
+          content:
+            `🚨 Rescue request from <@${interaction.user.id}>\n\n` +
+            `⚠️ **No Phoenix medics are currently On Duty.**\n` +
+            `Your ticket is open, but response may be delayed.`,
+          components: [row],
+        });
+      }
 
-  await logEvent(
-    guild,
-    `⚠️ **No Medics Available** — Rescue opened by <@${interaction.user.id}>`
-  );
-}
+      await logEvent(
+        guild,
+        `🆕 **Rescue Opened** — <@${interaction.user.id}> in ${channel}`
+      );
 
+      return interaction.reply({
+        content: `🚑 Rescue channel created: ${channel}`,
+        ephemeral: true,
+      });
+    } catch (e) {
+      console.error("❌ Failed to create rescue channel:", e);
+      return interaction.reply({
+        content: "❌ I couldn't create the rescue channel.",
+        ephemeral: true,
+      });
+    }
   }
 
   // CLAIM
@@ -293,7 +298,9 @@ if (activeMedics > 0) {
       interaction.guild,
       `🔒 **Rescue Claimed** — <@${interaction.user.id}> claimed ${interaction.channel}`
     );
-    return interaction.reply({ content: `🔒 Rescue claimed by <@${interaction.user.id}>` });
+    return interaction.reply({
+      content: `🔒 Rescue claimed by <@${interaction.user.id}>`,
+    });
   }
 
   // CLOSE
@@ -306,6 +313,7 @@ if (activeMedics > 0) {
     setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
   }
 });
+
 
 // ---------- Login ----------
 const token = process.env.TOKEN;
