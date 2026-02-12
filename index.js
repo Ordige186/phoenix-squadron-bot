@@ -16,9 +16,50 @@ const client = new Client({
 
 const ON_DUTY_ROLE = "Phoenix On Duty";
 
-client.once("ready", () => {
+client.once("ready", async () => {
   console.log(`🟣 Phoenix Squadron Bot Online as ${client.user.tag}`);
+
+  const onDutyChannelId = process.env.ON_DUTY_CHANNEL_ID;
+  const rescueChannelId = process.env.RESCUE_CHANNEL_ID;
+
+  if (!onDutyChannelId || !rescueChannelId) {
+    console.log("ℹ️ Panel channels not set. Add ON_DUTY_CHANNEL_ID and RESCUE_CHANNEL_ID in Railway Variables.");
+    return;
+  }
+
+  // ON DUTY PANEL
+  const onDutyChannel = await client.channels.fetch(onDutyChannelId).catch(() => null);
+  if (onDutyChannel) {
+    const dutyRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("toggle_duty")
+        .setLabel("Toggle On/Off Duty")
+        .setStyle(ButtonStyle.Secondary)
+    );
+
+    await onDutyChannel.send({
+      content: "🟣 **Phoenix Squadron — Duty Status**\n\nToggle your response status below.",
+      components: [dutyRow]
+    });
+  }
+
+  // RESCUE PANEL
+  const rescueChannel = await client.channels.fetch(rescueChannelId).catch(() => null);
+  if (rescueChannel) {
+    const rescueRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("request_rescue")
+        .setLabel("Request Extraction")
+        .setStyle(ButtonStyle.Danger)
+    );
+
+    await rescueChannel.send({
+      content: "🚨 **Request Extraction / Medical Support**\n\nPress below to open a private rescue ticket.",
+      components: [rescueRow]
+    });
+  }
 });
+
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
