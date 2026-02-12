@@ -206,6 +206,7 @@ client.on("interactionCreate", async (interaction) => {
 
       const channel = await guild.channels.create({
         name: channelName,
+        parent: process.env.TICKET_CATEGORY_ID,
         type: 0, // GuildText
         topic: `Rescue ticket for ${interaction.user.id}`,
         permissionOverwrites: [
