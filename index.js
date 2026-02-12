@@ -17,6 +17,7 @@ const client = new Client({
 const ON_DUTY_ROLE = "Phoenix On Duty";
 
 // ---------- Helpers ----------
+// ---------- Helpers ----------
 function getOnDutyCount(guild) {
   const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
   return role ? role.members.size : 0;
@@ -36,6 +37,7 @@ function buildDutyEmbed(guild) {
     footer: { text: "Phoenix Response System" },
   };
 }
+
 
 function buildRescueEmbed() {
   return {
