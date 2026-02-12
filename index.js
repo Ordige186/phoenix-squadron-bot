@@ -23,4 +23,182 @@ client.once("ready", async () => {
   const rescueChannelId = process.env.RESCUE_CHANNEL_ID;
 
   console.log("DEBUG ON_DUTY_CHANNEL_ID:", onDutyChannelId);
-  con
+  console.log("DEBUG RESCUE_CHANNEL_ID:", rescueChannelId);
+
+  if (!onDutyChannelId || !rescueChannelId) {
+    console.log("❌ Missing channel IDs in env vars. Set ON_DUTY_CHANNEL_ID and RESCUE_CHANNEL_ID in Railway Variables.");
+    return;
+  }
+
+  // ON DUTY PANEL
+  const onDutyChannel = await client.channels.fetch(onDutyChannelId).catch((e) => {
+    console.error("❌ Failed to fetch on-duty channel:", e);
+    return null;
+  });
+
+  if (onDutyChannel) {
+    try {
+      const dutyRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("toggle_duty")
+          .setLabel("Toggle On/Off Duty")
+          .setStyle(ButtonStyle.Secondary)
+      );
+
+      await onDutyChannel.send({
+        content: "🟣 **Phoenix Squadron — Duty Status**\n\nToggle your response status below.",
+        components: [dutyRow],
+      });
+
+      console.log("✅ Posted on-duty panel.");
+    } catch (e) {
+      console.error("❌ Failed to send on-duty panel:", e);
+    }
+  } else {
+    console.log("❌ onDutyChannel is null (wrong ID or missing access).");
+  }
+
+  // RESCUE PANEL
+  const rescueChannel = await client.channels.fetch(rescueChannelId).catch((e) => {
+    console.error("❌ Failed to fetch rescue channel:", e);
+    return null;
+  });
+
+  if (rescueChannel) {
+    try {
+      const rescueRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("request_rescue")
+          .setLabel("Request Extraction")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await rescueChannel.send({
+        content: "🚨 **Request Extraction / Medical Support**\n\nPress below to open a private rescue ticket.",
+        components: [rescueRow],
+      });
+
+      console.log("✅ Posted rescue panel.");
+    } catch (e) {
+      console.error("❌ Failed to send rescue panel:", e);
+    }
+  } else {
+    console.log("❌ rescueChannel is null (wrong ID or missing access).");
+  }
+});
+
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  const guild = interaction.guild;
+  const member = interaction.member;
+
+  const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
+
+  // Toggle Duty
+  if (interaction.customId === "toggle_duty") {
+    if (!role) {
+      return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
+    }
+
+    try {
+      if (member.roles.cache.has(role.id)) {
+        await member.roles.remove(role);
+        return interaction.reply({ content: "🟣 You are now **OFF Duty**.", ephemeral: true });
+      } else {
+        await member.roles.add(role);
+        return interaction.reply({ content: "🟣 You are now **ON Duty**.", ephemeral: true });
+      }
+    } catch (e) {
+      console.error("❌ Failed to toggle role:", e);
+      return interaction.reply({
+        content: "❌ I couldn't change your role. Check role hierarchy and bot permissions.",
+        ephemeral: true,
+      });
+    }
+  }
+
+  // Request Rescue Ticket (Private Channel)
+  if (interaction.customId === "request_rescue") {
+    if (!role) {
+      return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
+    }
+
+    try {
+      const channelName = `rescue-${interaction.user.username}`
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, "")
+        .slice(0, 90);
+
+      const channel = await guild.channels.create({
+        name: channelName,
+        type: 0, // GuildText
+        permissionOverwrites: [
+          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+          {
+            id: interaction.user.id,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory,
+            ],
+          },
+          {
+            id: role.id,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory,
+            ],
+          },
+        ],
+      });
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("claim_rescue")
+          .setLabel("🔒 Claim Rescue")
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId("close_rescue")
+          .setLabel("✅ Close Ticket")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await channel.send({
+        content: `🚨 <@&${role.id}> Rescue request from <@${interaction.user.id}>`,
+        components: [row],
+      });
+
+      return interaction.reply({ content: `🚑 Rescue channel created: ${channel}`, ephemeral: true });
+    } catch (e) {
+      console.error("❌ Failed to create rescue channel:", e);
+      return interaction.reply({
+        content: "❌ I couldn't create the rescue channel. Check Manage Channels permission.",
+        ephemeral: true,
+      });
+    }
+  }
+
+  // Claim Rescue
+  if (interaction.customId === "claim_rescue") {
+    return interaction.reply({ content: `🔒 Rescue claimed by <@${interaction.user.id}>` });
+  }
+
+  // Close Ticket
+  if (interaction.customId === "close_rescue") {
+    await interaction.reply({ content: "Closing ticket in 5 seconds..." });
+    setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+  }
+});
+
+const token = process.env.TOKEN;
+if (!token || token.trim().length < 20) {
+  console.error("❌ TOKEN env var missing or looks wrong. Set Railway Variable TOKEN and redeploy.");
+  process.exit(1);
+}
+
+client.login(token).catch((e) => {
+  console.error("❌ Login failed:", e);
+  process.exit(1);
+});
