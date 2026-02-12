@@ -286,14 +286,10 @@ client.on("interactionCreate", async (interaction) => {
 
     // CLOSE
     if (interaction.customId === "close_rescue") {
-      await logEvent(
-        interaction.guild,
-        `✅ **Rescue Closed** — <@${interaction.user.id}> closed ${interaction.channel}`
-      );
-      await interaction.reply({ content: "Closing ticket in 5 seconds..." });
-      setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
-      return;
-    }
+  const modal = buildRescueReportModal();
+  return interaction.showModal(modal);
+}
+
 
     return;
   }
@@ -307,6 +303,44 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
     }
 
+    if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_ID) {
+  try {
+    const channel = interaction.channel; // the ticket channel where the modal was opened
+    const guild = interaction.guild;
+
+    const { requesterId, claimedById } = parseTicketInfo(channel);
+
+    const outcome = interaction.fields.getTextInputValue("outcome");
+    const summary = interaction.fields.getTextInputValue("summary");
+    const threats = interaction.fields.getTextInputValue("threats") || "—";
+    const lessons = interaction.fields.getTextInputValue("lessons") || "—";
+
+    const requesterTag = requesterId ? `<@${requesterId}>` : "Unknown";
+    const assignedTag = claimedById ? `<@${claimedById}>` : "Unassigned";
+
+    await logEvent(
+      guild,
+      `📝 **Rescue Report Submitted**\n` +
+        `• **Ticket:** ${channel}\n` +
+        `• **Requester:** ${requesterTag}\n` +
+        `• **Assigned Medic:** ${assignedTag}\n` +
+        `• **Submitted By:** <@${interaction.user.id}>\n` +
+        `• **Outcome:** ${outcome}\n` +
+        `• **Threats:** ${threats}\n` +
+        `• **Summary:** ${summary}\n` +
+        `• **Notes:** ${lessons}`
+    );
+
+    await interaction.reply({ content: "✅ Report submitted. Closing ticket in 5 seconds...", ephemeral: true });
+    setTimeout(() => channel.delete().catch(() => {}), 5000);
+  } catch (e) {
+    console.error("❌ Failed to submit rescue report:", e);
+    return interaction.reply({
+      content: "❌ Could not submit report. Check bot permissions.",
+      ephemeral: true,
+    });
+  }
+}
     try {
       // one-ticket-per-user check again (in case of race)
       const existing = guild.channels.cache.find(
