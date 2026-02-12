@@ -22,6 +22,73 @@ client.once("ready", async () => {
   const onDutyChannelId = process.env.ON_DUTY_CHANNEL_ID;
   const rescueChannelId = process.env.RESCUE_CHANNEL_ID;
 
+  console.log("DEBUG ON_DUTY_CHANNEL_ID:", onDutyChannelId);
+  console.log("DEBUG RESCUE_CHANNEL_ID:", rescueChannelId);
+
+  if (!onDutyChannelId || !rescueChannelId) {
+    console.log("❌ Missing channel IDs in env vars.");
+    return;
+  }
+
+  const onDutyChannel = await client.channels.fetch(onDutyChannelId).catch((e) => {
+    console.error("❌ Failed to fetch on-duty channel:", e);
+    return null;
+  });
+
+  console.log("DEBUG onDutyChannel fetch result:", onDutyChannel ? `${onDutyChannel.name} (${onDutyChannel.id})` : "null");
+
+  if (onDutyChannel) {
+    try {
+      const dutyRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("toggle_duty")
+          .setLabel("Toggle On/Off Duty")
+          .setStyle(ButtonStyle.Secondary)
+      );
+
+      await onDutyChannel.send({
+        content: "🟣 **Phoenix Squadron — Duty Status**\n\nToggle your response status below.",
+        components: [dutyRow]
+      });
+
+      console.log("✅ Posted on-duty panel.");
+    } catch (e) {
+      console.error("❌ Failed to send on-duty panel:", e);
+    }
+  }
+
+  const rescueChannel = await client.channels.fetch(rescueChannelId).catch((e) => {
+    console.error("❌ Failed to fetch rescue channel:", e);
+    return null;
+  });
+
+  console.log("DEBUG rescueChannel fetch result:", rescueChannel ? `${rescueChannel.name} (${rescueChannel.id})` : "null");
+
+  if (rescueChannel) {
+    try {
+      const rescueRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId("request_rescue")
+          .setLabel("Request Extraction")
+          .setStyle(ButtonStyle.Danger)
+      );
+
+      await rescueChannel.send({
+        content: "🚨 **Request Extraction / Medical Support**\n\nPress below to open a private rescue ticket.",
+        components: [rescueRow]
+      });
+
+      console.log("✅ Posted rescue panel.");
+    } catch (e) {
+      console.error("❌ Failed to send rescue panel:", e);
+    }
+  }
+});
+
+
+  const onDutyChannelId = process.env.ON_DUTY_CHANNEL_ID;
+  const rescueChannelId = process.env.RESCUE_CHANNEL_ID;
+
   if (!onDutyChannelId || !rescueChannelId) {
     console.log("ℹ️ Panel channels not set. Add ON_DUTY_CHANNEL_ID and RESCUE_CHANNEL_ID in Railway Variables.");
     return;
