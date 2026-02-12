@@ -96,26 +96,50 @@ client.on("interactionCreate", async (interaction) => {
   const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
 
   // Toggle Duty
-  if (interaction.customId === "toggle_duty") {
-    if (!role) {
-      return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
-    }
+ if (interaction.customId === "toggle_duty") {
+  if (!role) {
+    return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
+  }
 
-    try {
-      if (member.roles.cache.has(role.id)) {
-        await member.roles.remove(role);
-        return interaction.reply({ content: "🟣 You are now **OFF Duty**.", ephemeral: true });
-      } else {
-        await member.roles.add(role);
-        return interaction.reply({ content: "🟣 You are now **ON Duty**.", ephemeral: true });
-      }
-    } catch (e) {
-      console.error("❌ Failed to toggle role:", e);
-      return interaction.reply({
-        content: "❌ I couldn't change your role. Check role hierarchy and bot permissions.",
-        ephemeral: true,
-      });
-    }
+  if (member.roles.cache.has(role.id)) {
+    await member.roles.remove(role);
+  } else {
+    await member.roles.add(role);
+  }
+
+  // 🔄 Update duty panel count
+  const onDutyChannel = await client.channels.fetch(process.env.ON_DUTY_CHANNEL_ID);
+  const dutyMessage = await onDutyChannel.messages
+    .fetch(process.env.ON_DUTY_PANEL_ID)
+    .catch(() => null);
+
+  if (dutyMessage) {
+    const activeCount = getOnDutyCount(onDutyChannel.guild);
+
+    const updatedEmbed = {
+      title: "🟣 Phoenix Squadron — Duty Status",
+      description:
+        "**Response Protocol Active**\n\n" +
+        `🩺 **Phoenix On Duty Active:** **${activeCount}**\n\n` +
+        "Toggle your availability for QRF medical response.\n\n" +
+        "• On Duty → You will be pinged for rescues\n" +
+        "• Off Duty → No notifications",
+      color: 0x6a0dad,
+      footer: { text: "Phoenix Response System" }
+    };
+
+    await dutyMessage.edit({ embeds: [updatedEmbed] });
+  }
+
+  const isOnDuty = member.roles.cache.has(role.id);
+  return interaction.reply({
+    content: isOnDuty
+      ? "🟣 You are now **ON Duty**."
+      : "🟣 You are now **OFF Duty**.",
+    ephemeral: true
+  });
+}
+
   }
 
   // Request Rescue Ticket (Private Channel)
