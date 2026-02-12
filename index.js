@@ -319,6 +319,7 @@ client.on("interactionCreate", async (interaction) => {
         });
       }
 
+      const ign = interaction.fields.getTextInputValue("ign");
       const system = interaction.fields.getTextInputValue("system");
       const planet = interaction.fields.getTextInputValue("planet");
       const hostiles = interaction.fields.getTextInputValue("hostiles");
@@ -378,6 +379,7 @@ client.on("interactionCreate", async (interaction) => {
       const activeMedics = getOnDutyCount(guild);
 
       const details =
+        `🎮 **IGN:** ${ign}\n` +
         `📍 **System:** ${system}\n` +
         `🪐 **Planet/POI:** ${planet}\n` +
         `⚔️ **Hostiles:** ${hostiles}\n` +
