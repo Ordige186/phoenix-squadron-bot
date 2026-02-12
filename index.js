@@ -128,6 +128,7 @@ function buildRescueModal() {
     .setRequired(false);
 
   modal.addComponents(
+    new ActionRowBuilder().addComponents(ignInput),
     new ActionRowBuilder().addComponents(systemInput),
     new ActionRowBuilder().addComponents(planetInput),
     new ActionRowBuilder().addComponents(hostilesInput),
