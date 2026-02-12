@@ -19,18 +19,9 @@ const ON_DUTY_ROLE = "Phoenix On Duty";
 client.once("ready", async () => {
   console.log(`🟣 Phoenix Squadron Bot Online as ${client.user.tag}`);
 
-  const onDutyChannelId = process.env.ON_DUTY_CHANNEL_ID;
-  const rescueChannelId = process.env.RESCUE_CHANNEL_ID;
+  const onDutyChannel = await client.channels.fetch(process.env.ON_DUTY_CHANNEL_ID);
+  const rescueChannel = await client.channels.fetch(process.env.RESCUE_CHANNEL_ID);
 
-  if (!onDutyChannelId || !rescueChannelId) {
-    console.log("❌ Missing channel IDs in env vars.");
-    return;
-  }
-
-  const onDutyChannel = await client.channels.fetch(onDutyChannelId);
-  const rescueChannel = await client.channels.fetch(rescueChannelId);
-
-  // ----- ON DUTY PANEL -----
   const dutyRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("toggle_duty")
@@ -38,32 +29,6 @@ client.once("ready", async () => {
       .setStyle(ButtonStyle.Secondary)
   );
 
-  let dutyMessage;
-
-  if (process.env.ON_DUTY_PANEL_ID) {
-    try {
-      dutyMessage = await onDutyChannel.messages.fetch(process.env.ON_DUTY_PANEL_ID);
-      await dutyMessage.edit({
-        content: "🟣 **Phoenix Squadron — Duty Status**\n\nToggle your response status below.",
-        components: [dutyRow],
-      });
-      console.log("✅ Updated existing On Duty panel.");
-    } catch {
-      dutyMessage = await onDutyChannel.send({
-        content: "🟣 **Phoenix Squadron — Duty Status**\n\nToggle your response status below.",
-        components: [dutyRow],
-      });
-      console.log("🆕 Created new On Duty panel:", dutyMessage.id);
-    }
-  } else {
-    dutyMessage = await onDutyChannel.send({
-      content: "🟣 **Phoenix Squadron — Duty Status**\n\nToggle your response status below.",
-      components: [dutyRow],
-    });
-    console.log("🆕 Created new On Duty panel:", dutyMessage.id);
-  }
-
-  // ----- RESCUE PANEL -----
   const rescueRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("request_rescue")
@@ -71,32 +36,48 @@ client.once("ready", async () => {
       .setStyle(ButtonStyle.Danger)
   );
 
-  let rescueMessage;
+  const dutyEmbed = {
+    title: "🟣 Phoenix Squadron — Duty Status",
+    description:
+      "**Response Protocol Active**\n\n" +
+      "Toggle your availability for QRF medical response.\n\n" +
+      "• On Duty → You will be pinged for rescues\n" +
+      "• Off Duty → No notifications",
+    color: 0x6a0dad,
+    footer: { text: "Phoenix Response System" }
+  };
 
-  if (process.env.RESCUE_PANEL_ID) {
-    try {
-      rescueMessage = await rescueChannel.messages.fetch(process.env.RESCUE_PANEL_ID);
-      await rescueMessage.edit({
-        content: "🚨 **Request Extraction / Medical Support**\n\nPress below to open a private rescue ticket.",
-        components: [rescueRow],
-      });
-      console.log("✅ Updated existing Rescue panel.");
-    } catch {
-      rescueMessage = await rescueChannel.send({
-        content: "🚨 **Request Extraction / Medical Support**\n\nPress below to open a private rescue ticket.",
-        components: [rescueRow],
-      });
-      console.log("🆕 Created new Rescue panel:", rescueMessage.id);
-    }
-  } else {
-    rescueMessage = await rescueChannel.send({
-      content: "🚨 **Request Extraction / Medical Support**\n\nPress below to open a private rescue ticket.",
-      components: [rescueRow],
-    });
-    console.log("🆕 Created new Rescue panel:", rescueMessage.id);
+  const rescueEmbed = {
+    title: "🚨 Request Extraction / Medical Support",
+    description:
+      "Press below to open a **private rescue ticket**.\n\n" +
+      "Include:\n" +
+      "• Location\n" +
+      "• Situation\n" +
+      "• Enemy presence\n" +
+      "• Urgency",
+    color: 0x6a0dad,
+    footer: { text: "Phoenix Response System" }
+  };
+
+  const dutyMessage = await onDutyChannel.messages
+    .fetch(process.env.ON_DUTY_PANEL_ID)
+    .catch(() => null);
+
+  if (dutyMessage) {
+    await dutyMessage.edit({ embeds: [dutyEmbed], components: [dutyRow] });
   }
-});
 
+  const rescueMessage = await rescueChannel.messages
+    .fetch(process.env.RESCUE_PANEL_ID)
+    .catch(() => null);
+
+  if (rescueMessage) {
+    await rescueMessage.edit({ embeds: [rescueEmbed], components: [rescueRow] });
+  }
+
+  console.log("🟣 Panels updated with purple embed styling.");
+});
 
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
