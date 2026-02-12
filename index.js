@@ -92,6 +92,13 @@ function buildRescueModal() {
     .setCustomId(RESCUE_MODAL_ID)
     .setTitle("Phoenix Rescue Request");
 
+  const ignInput = new TextInputBuilder()
+  .setCustomId("ign")
+  .setLabel("In-game name (IGN)")
+  .setStyle(TextInputStyle.Short)
+  .setPlaceholder("e.g., Benito")
+  .setRequired(true);
+
   const systemInput = new TextInputBuilder()
     .setCustomId("system")
     .setLabel("System")
