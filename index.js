@@ -247,6 +247,43 @@ client.on("interactionCreate", async (interaction) => {
     const guild = interaction.guild;
     const member = interaction.member;
     const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
+// RESCUE REPORT MODAL SUBMIT
+if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_ID) {
+  try {
+    // Always respond quickly so Discord doesn't show "Interaction Failed"
+    await interaction.deferReply({ ephemeral: true });
+
+    const channel = interaction.channel; // ticket channel
+    const guild = interaction.guild;
+
+    const outcome = interaction.fields.getTextInputValue("outcome");
+    const summary = interaction.fields.getTextInputValue("summary");
+    const threats = interaction.fields.getTextInputValue("threats") || "—";
+    const lessons = interaction.fields.getTextInputValue("lessons") || "—";
+
+    await logEvent(
+      guild,
+      `📝 **Rescue Report Submitted**\n` +
+        `• **Ticket:** ${channel}\n` +
+        `• **Submitted By:** <@${interaction.user.id}>\n` +
+        `• **Outcome:** ${outcome}\n` +
+        `• **Threats:** ${threats}\n` +
+        `• **Summary:** ${summary}\n` +
+        `• **Notes:** ${lessons}`
+    );
+
+    await interaction.editReply("✅ Report submitted. Closing ticket in 5 seconds...");
+    setTimeout(() => channel.delete().catch(() => {}), 5000);
+    return;
+  } catch (e) {
+    console.error("❌ Rescue report modal submit failed:", e);
+    // If deferReply failed, try a normal reply
+    if (!interaction.replied && !interaction.deferred) {
+      return interaction.reply({ content: "❌ Report failed to submit. Check logs.", ephemeral: true });
+    }
+    return interaction.editReply("❌ Report failed to submit. Check logs.");
+  }
+}
 
     // TOGGLE DUTY
     if (interaction.customId === "toggle_duty") {
