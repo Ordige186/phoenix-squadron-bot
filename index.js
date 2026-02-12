@@ -17,7 +17,6 @@ const client = new Client({
 const ON_DUTY_ROLE = "Phoenix On Duty";
 
 // ---------- Helpers ----------
-// ---------- Helpers ----------
 function getOnDutyCount(guild) {
   const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
   return role ? role.members.size : 0;
