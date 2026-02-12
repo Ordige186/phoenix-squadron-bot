@@ -263,21 +263,28 @@ client.on("interactionCreate", async (interaction) => {
           .setStyle(ButtonStyle.Danger)
       );
 
-      await channel.send({
-        content: `🚨 <@&${role.id}> Rescue request from <@${interaction.user.id}>`,
-        components: [row],
-      });
+      const activeMedics = getOnDutyCount(guild);
 
-      await logEvent(guild, `🆕 **Rescue Opened** — <@${interaction.user.id}> in ${channel}`);
+if (activeMedics > 0) {
+  await channel.send({
+    content: `🚨 <@&${role.id}> Rescue request from <@${interaction.user.id}>`,
+    components: [row],
+  });
+} else {
+  await channel.send({
+    content:
+      `🚨 Rescue request from <@${interaction.user.id}>\n\n` +
+      `⚠️ **No Phoenix medics are currently On Duty.**\n` +
+      `Your ticket is open, but response may be delayed.`,
+    components: [row],
+  });
 
-      return interaction.reply({ content: `🚑 Rescue channel created: ${channel}`, ephemeral: true });
-    } catch (e) {
-      console.error("❌ Failed to create rescue channel:", e);
-      return interaction.reply({
-        content: "❌ I couldn't create the rescue channel. Check Manage Channels + category permissions.",
-        ephemeral: true,
-      });
-    }
+  await logEvent(
+    guild,
+    `⚠️ **No Medics Available** — Rescue opened by <@${interaction.user.id}>`
+  );
+}
+
   }
 
   // CLAIM
