@@ -138,6 +138,48 @@ function buildRescueModal() {
 
   return modal;
 }
+function buildRescueReportModal() {
+  const modal = new ModalBuilder()
+    .setCustomId(RESCUE_REPORT_MODAL_ID)
+    .setTitle("Phoenix Rescue Report");
+
+  const outcome = new TextInputBuilder()
+    .setCustomId("outcome")
+    .setLabel("Outcome")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("Successful / Partial / Failed")
+    .setRequired(true);
+
+  const summary = new TextInputBuilder()
+    .setCustomId("summary")
+    .setLabel("Summary")
+    .setStyle(TextInputStyle.Paragraph)
+    .setPlaceholder("What happened? What actions were taken?")
+    .setRequired(true);
+
+  const threats = new TextInputBuilder()
+    .setCustomId("threats")
+    .setLabel("Hostiles / Threats encountered (optional)")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("None / Light / Heavy (details)")
+    .setRequired(false);
+
+  const lessons = new TextInputBuilder()
+    .setCustomId("lessons")
+    .setLabel("Notes / Lessons learned (optional)")
+    .setStyle(TextInputStyle.Paragraph)
+    .setPlaceholder("Anything to improve for next time?")
+    .setRequired(false);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(outcome),
+    new ActionRowBuilder().addComponents(summary),
+    new ActionRowBuilder().addComponents(threats),
+    new ActionRowBuilder().addComponents(lessons)
+  );
+
+  return modal;
+}
 
 // ---------- Startup: update panels (no duplicates) ----------
 client.once("ready", async () => {
