@@ -8,6 +8,9 @@ const {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
 } = require("discord.js");
 
 const client = new Client({
@@ -15,6 +18,7 @@ const client = new Client({
 });
 
 const ON_DUTY_ROLE = "Phoenix On Duty";
+const RESCUE_MODAL_ID = "rescue_request_modal";
 
 // ---------- Helpers ----------
 function getOnDutyCount(guild) {
@@ -42,11 +46,11 @@ function buildRescueEmbed() {
     title: "🚨 Request Extraction / Medical Support",
     description:
       "Press below to open a **private rescue ticket**.\n\n" +
-      "**Include:**\n" +
-      "• Location\n" +
-      "• Situation / injuries\n" +
-      "• Enemy presence\n" +
-      "• Urgency",
+      "You’ll be prompted for:\n" +
+      "• System\n" +
+      "• Planet / Moon\n" +
+      "• Hostiles\n" +
+      "• Notes",
     color: 0x6a0dad,
     footer: { text: "Phoenix Response System" },
   };
@@ -81,6 +85,49 @@ async function refreshDutyPanel() {
   );
 
   await msg.edit({ embeds: [buildDutyEmbed(ch.guild)], components: [dutyRow] }).catch(() => {});
+}
+
+function buildRescueModal() {
+  const modal = new ModalBuilder()
+    .setCustomId(RESCUE_MODAL_ID)
+    .setTitle("Phoenix Rescue Request");
+
+  const systemInput = new TextInputBuilder()
+    .setCustomId("system")
+    .setLabel("System")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("e.g., Stanton, Pyro")
+    .setRequired(true);
+
+  const planetInput = new TextInputBuilder()
+    .setCustomId("planet")
+    .setLabel("Planet / Moon / POI")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("e.g., Hurston, Daymar, Ruin Station")
+    .setRequired(true);
+
+  const hostilesInput = new TextInputBuilder()
+    .setCustomId("hostiles")
+    .setLabel("Hostiles")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("None / Light / Heavy (type & count if known)")
+    .setRequired(true);
+
+  const notesInput = new TextInputBuilder()
+    .setCustomId("notes")
+    .setLabel("Extra details (optional)")
+    .setStyle(TextInputStyle.Paragraph)
+    .setPlaceholder("Injuries, ship status, marker, comms, preferred pickup, etc.")
+    .setRequired(false);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(systemInput),
+    new ActionRowBuilder().addComponents(planetInput),
+    new ActionRowBuilder().addComponents(hostilesInput),
+    new ActionRowBuilder().addComponents(notesInput)
+  );
+
+  return modal;
 }
 
 // ---------- Startup: update panels (no duplicates) ----------
@@ -142,52 +189,48 @@ client.once("ready", async () => {
   }
 });
 
-// ---------- Buttons ----------
+// ---------- Interactions ----------
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
+  // BUTTONS
+  if (interaction.isButton()) {
+    const guild = interaction.guild;
+    const member = interaction.member;
+    const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
 
-  const guild = interaction.guild;
-  const member = interaction.member;
-  const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
-
-  // TOGGLE DUTY
-  if (interaction.customId === "toggle_duty") {
-    if (!role) {
-      return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
-    }
-
-    try {
-      const wasOnDuty = member.roles.cache.has(role.id);
-
-      if (wasOnDuty) {
-        await member.roles.remove(role);
-      } else {
-        await member.roles.add(role);
+    // TOGGLE DUTY
+    if (interaction.customId === "toggle_duty") {
+      if (!role) {
+        return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
       }
 
-      await refreshDutyPanel();
+      try {
+        const wasOnDuty = member.roles.cache.has(role.id);
 
-      return interaction.reply({
-        content: wasOnDuty ? "🟣 You are now **OFF Duty**." : "🟣 You are now **ON Duty**.",
-        ephemeral: true,
-      });
-    } catch (e) {
-      console.error("❌ Failed to toggle duty:", e);
-      return interaction.reply({
-        content: "❌ I couldn't change your role. Check role hierarchy + Manage Roles permission.",
-        ephemeral: true,
-      });
+        if (wasOnDuty) await member.roles.remove(role);
+        else await member.roles.add(role);
+
+        await refreshDutyPanel();
+
+        return interaction.reply({
+          content: wasOnDuty ? "🟣 You are now **OFF Duty**." : "🟣 You are now **ON Duty**.",
+          ephemeral: true,
+        });
+      } catch (e) {
+        console.error("❌ Failed to toggle duty:", e);
+        return interaction.reply({
+          content: "❌ I couldn't change your role. Check role hierarchy + Manage Roles permission.",
+          ephemeral: true,
+        });
+      }
     }
-  }
 
-  // REQUEST RESCUE
-  if (interaction.customId === "request_rescue") {
-    if (!role) {
-      return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
-    }
+    // REQUEST RESCUE -> SHOW MODAL
+    if (interaction.customId === "request_rescue") {
+      if (!role) {
+        return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
+      }
 
-    try {
-      // One ticket per user
+      // one-ticket-per-user (by topic)
       const existing = guild.channels.cache.find(
         (c) => c.type === 0 && c.topic === `Rescue ticket for ${interaction.user.id}`
       );
@@ -198,6 +241,80 @@ client.on("interactionCreate", async (interaction) => {
           ephemeral: true,
         });
       }
+
+      const modal = buildRescueModal();
+      return interaction.showModal(modal);
+    }
+
+    // CLAIM (Assigned Medic + lock)
+    if (interaction.customId === "claim_rescue") {
+      const channel = interaction.channel;
+
+      if (channel.topic && channel.topic.includes("CLAIMED_BY:")) {
+        return interaction.reply({ content: "⚠️ This rescue has already been claimed.", ephemeral: true });
+      }
+
+      const baseTopic = channel.topic || "";
+      const newTopic = `${baseTopic} | CLAIMED_BY:${interaction.user.id}`.slice(0, 1024);
+      await channel.setTopic(newTopic).catch(() => {});
+
+      const messages = await channel.messages.fetch({ limit: 25 }).catch(() => null);
+      if (messages) {
+        const oldest = messages.last();
+        if (oldest) {
+          const alreadyHasAssigned = oldest.content.includes("Assigned Medic:");
+          const updatedContent = alreadyHasAssigned
+            ? oldest.content
+            : `${oldest.content}\n\n🩺 **Assigned Medic:** <@${interaction.user.id}>`;
+
+          await oldest.edit({ content: updatedContent, components: oldest.components }).catch(() => {});
+        }
+      }
+
+      await logEvent(interaction.guild, `🔒 **Rescue Claimed** — <@${interaction.user.id}> claimed ${channel}`);
+
+      return interaction.reply({ content: "🔒 You have claimed this rescue.", ephemeral: true });
+    }
+
+    // CLOSE
+    if (interaction.customId === "close_rescue") {
+      await logEvent(
+        interaction.guild,
+        `✅ **Rescue Closed** — <@${interaction.user.id}> closed ${interaction.channel}`
+      );
+      await interaction.reply({ content: "Closing ticket in 5 seconds..." });
+      setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+      return;
+    }
+
+    return;
+  }
+
+  // MODAL SUBMIT
+  if (interaction.isModalSubmit() && interaction.customId === RESCUE_MODAL_ID) {
+    const guild = interaction.guild;
+    const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
+
+    if (!role) {
+      return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
+    }
+
+    try {
+      // one-ticket-per-user check again (in case of race)
+      const existing = guild.channels.cache.find(
+        (c) => c.type === 0 && c.topic === `Rescue ticket for ${interaction.user.id}`
+      );
+      if (existing) {
+        return interaction.reply({
+          content: `⚠️ You already have an active rescue ticket: ${existing}`,
+          ephemeral: true,
+        });
+      }
+
+      const system = interaction.fields.getTextInputValue("system");
+      const planet = interaction.fields.getTextInputValue("planet");
+      const hostiles = interaction.fields.getTextInputValue("hostiles");
+      const notes = interaction.fields.getTextInputValue("notes") || "—";
 
       const channelName = `rescue-${interaction.user.username}`
         .toLowerCase()
@@ -211,8 +328,6 @@ client.on("interactionCreate", async (interaction) => {
         topic: `Rescue ticket for ${interaction.user.id}`,
         permissionOverwrites: [
           { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-
-          // Allow bot
           {
             id: guild.members.me.id,
             allow: [
@@ -221,8 +336,6 @@ client.on("interactionCreate", async (interaction) => {
               PermissionsBitField.Flags.ReadMessageHistory,
             ],
           },
-
-          // Allow requester
           {
             id: interaction.user.id,
             allow: [
@@ -231,8 +344,6 @@ client.on("interactionCreate", async (interaction) => {
               PermissionsBitField.Flags.ReadMessageHistory,
             ],
           },
-
-          // Allow on-duty role
           {
             id: role.id,
             allow: [
@@ -244,7 +355,7 @@ client.on("interactionCreate", async (interaction) => {
         ],
       });
 
-      // Extra safety vs category perms
+      // extra safety
       await channel.permissionOverwrites.edit(guild.members.me.id, {
         ViewChannel: true,
         SendMessages: true,
@@ -258,78 +369,44 @@ client.on("interactionCreate", async (interaction) => {
 
       const activeMedics = getOnDutyCount(guild);
 
+      const details =
+        `📍 **System:** ${system}\n` +
+        `🪐 **Planet/POI:** ${planet}\n` +
+        `⚔️ **Hostiles:** ${hostiles}\n` +
+        `📝 **Notes:** ${notes}`;
+
       if (activeMedics > 0) {
         await channel.send({
-          content: `🚨 <@&${role.id}> Rescue request from <@${interaction.user.id}>`,
+          content:
+            `🚨 <@&${role.id}> Rescue request from <@${interaction.user.id}>\n\n` +
+            details,
           components: [row],
         });
       } else {
         await channel.send({
           content:
             `🚨 Rescue request from <@${interaction.user.id}>\n\n` +
-            `⚠️ **No Phoenix medics are currently On Duty.**\n` +
-            `Your ticket is open, but response may be delayed.`,
+            `⚠️ **No Phoenix medics are currently On Duty.** Response may be delayed.\n\n` +
+            details,
           components: [row],
         });
+
         await logEvent(guild, `⚠️ **No Medics Available** — Rescue opened by <@${interaction.user.id}>`);
       }
 
       await logEvent(guild, `🆕 **Rescue Opened** — <@${interaction.user.id}> in ${channel}`);
 
-      return interaction.reply({ content: `🚑 Rescue channel created: ${channel}`, ephemeral: true });
+      return interaction.reply({
+        content: `🚑 Rescue channel created: ${channel}`,
+        ephemeral: true,
+      });
     } catch (e) {
-      console.error("❌ Failed to create rescue channel:", e);
+      console.error("❌ Failed to handle rescue modal submit:", e);
       return interaction.reply({
-        content: "❌ I couldn't create the rescue channel. Check Manage Channels + category permissions.",
+        content: "❌ Something went wrong creating the rescue ticket. Check bot permissions.",
         ephemeral: true,
       });
     }
-  }
-
-  // CLAIM (Assigned Medic + lock)
-  if (interaction.customId === "claim_rescue") {
-    const channel = interaction.channel;
-
-    // If already claimed, block it
-    if (channel.topic && channel.topic.includes("CLAIMED_BY:")) {
-      return interaction.reply({
-        content: "⚠️ This rescue has already been claimed.",
-        ephemeral: true,
-      });
-    }
-
-    // Mark claimed in topic
-    const baseTopic = channel.topic || "";
-    const newTopic = `${baseTopic} | CLAIMED_BY:${interaction.user.id}`.slice(0, 1024);
-    await channel.setTopic(newTopic).catch(() => {});
-
-    // Try to edit the oldest visible message in the channel
-    const messages = await channel.messages.fetch({ limit: 25 }).catch(() => null);
-    if (messages) {
-      const oldest = messages.last(); // last() = oldest of fetched
-      if (oldest) {
-        const alreadyHasAssigned = oldest.content.includes("Assigned Medic:");
-        const updatedContent = alreadyHasAssigned
-          ? oldest.content
-          : `${oldest.content}\n\n🩺 **Assigned Medic:** <@${interaction.user.id}>`;
-
-        await oldest.edit({ content: updatedContent, components: oldest.components }).catch(() => {});
-      }
-    }
-
-    await logEvent(interaction.guild, `🔒 **Rescue Claimed** — <@${interaction.user.id}> claimed ${channel}`);
-
-    return interaction.reply({
-      content: "🔒 You have claimed this rescue.",
-      ephemeral: true,
-    });
-  }
-
-  // CLOSE
-  if (interaction.customId === "close_rescue") {
-    await logEvent(interaction.guild, `✅ **Rescue Closed** — <@${interaction.user.id}> closed ${interaction.channel}`);
-    await interaction.reply({ content: "Closing ticket in 5 seconds..." });
-    setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
   }
 });
 
