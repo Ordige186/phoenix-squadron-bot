@@ -40,16 +40,20 @@ client.once("ready", async () => {
       .setStyle(ButtonStyle.Danger)
   );
 
-  const dutyEmbed = {
-    title: "🟣 Phoenix Squadron — Duty Status",
-    description:
-      "**Response Protocol Active**\n\n" +
-      "Toggle your availability for QRF medical response.\n\n" +
-      "• On Duty → You will be pinged for rescues\n" +
-      "• Off Duty → No notifications",
-    color: 0x6a0dad,
-    footer: { text: "Phoenix Response System" }
-  };
+const activeCount = getOnDutyCount(onDutyChannel.guild);
+
+const dutyEmbed = {
+  title: "🟣 Phoenix Squadron — Duty Status",
+  description:
+    "**Response Protocol Active**\n\n" +
+    `🩺 **Phoenix On Duty Active:** **${activeCount}**\n\n` +
+    "Toggle your availability for QRF medical response.\n\n" +
+    "• On Duty → You will be pinged for rescues\n" +
+    "• Off Duty → No notifications",
+  color: 0x6a0dad,
+  footer: { text: "Phoenix Response System" }
+};
+
 
   const rescueEmbed = {
     title: "🚨 Request Extraction / Medical Support",
