@@ -19,6 +19,7 @@ const client = new Client({
 
 const ON_DUTY_ROLE = "Phoenix On Duty";
 const RESCUE_MODAL_ID = "rescue_request_modal";
+const RESCUE_REPORT_MODAL_ID = "rescue_report_modal";
 
 // ---------- Helpers ----------
 function getOnDutyCount(guild) {
