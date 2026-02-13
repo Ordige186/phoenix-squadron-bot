@@ -17,15 +17,28 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
 
+// Roles
 const ON_DUTY_ROLE = "Phoenix On Duty";
+const RECON_ROLE = "Phoenix Recon";
 
+// Modal IDs
 const RESCUE_MODAL_ID = "rescue_request_modal";
 const RESCUE_REPORT_MODAL_ID = "rescue_report_modal";
+const RECON_MODAL_ID = "recon_request_modal";
+const RECON_REPORT_MODAL_ID = "recon_report_modal";
 
 // ---------- Helpers ----------
-function getOnDutyCount(guild) {
-  const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
+function getRoleByName(guild, roleName) {
+  return guild.roles.cache.find((r) => r.name === roleName) || null;
+}
+
+function getRoleCount(guild, roleName) {
+  const role = getRoleByName(guild, roleName);
   return role ? role.members.size : 0;
+}
+
+function getOnDutyCount(guild) {
+  return getRoleCount(guild, ON_DUTY_ROLE);
 }
 
 function buildDutyEmbed(guild) {
@@ -35,7 +48,7 @@ function buildDutyEmbed(guild) {
     description:
       "**Response Protocol Active**\n\n" +
       `🩺 **Phoenix On Duty Active:** **${activeCount}**\n\n` +
-      "Toggle your availability for QRF medical response.\n\n" +
+      "Use the buttons below to set your response status.\n\n" +
       "• On Duty → You will be pinged for rescues\n" +
       "• Off Duty → No notifications",
     color: 0x6a0dad,
@@ -43,17 +56,15 @@ function buildDutyEmbed(guild) {
   };
 }
 
-function buildRescueEmbed() {
+function buildOpsEmbed() {
   return {
-    title: "🚨 Request Extraction / Medical Support",
+    title: "🚨 Phoenix Requests — Extraction & Recon",
     description:
-      "Press below to open a **private rescue ticket**.\n\n" +
-      "You’ll be prompted for:\n" +
-      "• In-game name (IGN)\n" +
-      "• System\n" +
-      "• Planet / Moon / POI\n" +
-      "• Hostiles\n" +
-      "• Notes",
+      "Use the buttons below to open a **private ticket**.\n\n" +
+      "**Extraction / Medical**:\n" +
+      "• IGN • System • Planet/POI • Hostiles • Notes\n\n" +
+      "**Recon**:\n" +
+      "• IGN • System • Location/POI • Objective • Hostiles",
     color: 0x6a0dad,
     footer: { text: "Phoenix Response System" },
   };
@@ -69,6 +80,19 @@ async function logEvent(guild, text) {
   await ch.send(text).catch(() => {});
 }
 
+function dutyButtonsRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("go_on_duty")
+      .setLabel("🟢 Go On Duty")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId("go_off_duty")
+      .setLabel("🔴 Go Off Duty")
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
 async function refreshDutyPanel() {
   const onDutyChannelId = process.env.ON_DUTY_CHANNEL_ID;
   const dutyPanelId = process.env.ON_DUTY_PANEL_ID;
@@ -80,48 +104,54 @@ async function refreshDutyPanel() {
   const msg = await ch.messages.fetch(dutyPanelId).catch(() => null);
   if (!msg) return;
 
-  const dutyRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("toggle_duty")
-      .setLabel("Toggle On/Off Duty")
-      .setStyle(ButtonStyle.Secondary)
-  );
+  await msg.edit({ embeds: [buildDutyEmbed(ch.guild)], components: [dutyButtonsRow()] }).catch(() => {});
+}
 
-  await msg.edit({ embeds: [buildDutyEmbed(ch.guild)], components: [dutyRow] }).catch(() => {});
+function opsButtonsRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("request_rescue")
+      .setLabel("Request Extraction")
+      .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId("request_recon")
+      .setLabel("Request Recon")
+      .setStyle(ButtonStyle.Primary)
+  );
 }
 
 function buildRescueModal() {
   const modal = new ModalBuilder().setCustomId(RESCUE_MODAL_ID).setTitle("Phoenix Rescue Request");
 
-  const ignInput = new TextInputBuilder()
+  const ign = new TextInputBuilder()
     .setCustomId("ign")
     .setLabel("In-game name (IGN)")
     .setStyle(TextInputStyle.Short)
     .setPlaceholder("e.g., MikeOrtiz")
     .setRequired(true);
 
-  const systemInput = new TextInputBuilder()
+  const system = new TextInputBuilder()
     .setCustomId("system")
     .setLabel("System")
     .setStyle(TextInputStyle.Short)
     .setPlaceholder("e.g., Stanton, Pyro")
     .setRequired(true);
 
-  const planetInput = new TextInputBuilder()
+  const planet = new TextInputBuilder()
     .setCustomId("planet")
     .setLabel("Planet / Moon / POI")
     .setStyle(TextInputStyle.Short)
     .setPlaceholder("e.g., Hurston, Daymar, Ruin Station")
     .setRequired(true);
 
-  const hostilesInput = new TextInputBuilder()
+  const hostiles = new TextInputBuilder()
     .setCustomId("hostiles")
     .setLabel("Hostiles")
     .setStyle(TextInputStyle.Short)
     .setPlaceholder("None / Light / Heavy (type & count if known)")
     .setRequired(true);
 
-  const notesInput = new TextInputBuilder()
+  const notes = new TextInputBuilder()
     .setCustomId("notes")
     .setLabel("Extra details (optional)")
     .setStyle(TextInputStyle.Paragraph)
@@ -129,11 +159,60 @@ function buildRescueModal() {
     .setRequired(false);
 
   modal.addComponents(
-    new ActionRowBuilder().addComponents(ignInput),
-    new ActionRowBuilder().addComponents(systemInput),
-    new ActionRowBuilder().addComponents(planetInput),
-    new ActionRowBuilder().addComponents(hostilesInput),
-    new ActionRowBuilder().addComponents(notesInput)
+    new ActionRowBuilder().addComponents(ign),
+    new ActionRowBuilder().addComponents(system),
+    new ActionRowBuilder().addComponents(planet),
+    new ActionRowBuilder().addComponents(hostiles),
+    new ActionRowBuilder().addComponents(notes)
+  );
+
+  return modal;
+}
+
+function buildReconModal() {
+  const modal = new ModalBuilder().setCustomId(RECON_MODAL_ID).setTitle("Phoenix Recon Request");
+
+  const ign = new TextInputBuilder()
+    .setCustomId("ign")
+    .setLabel("In-game name (IGN)")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("e.g., MikeOrtiz")
+    .setRequired(true);
+
+  const system = new TextInputBuilder()
+    .setCustomId("system")
+    .setLabel("System")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("e.g., Stanton, Pyro")
+    .setRequired(true);
+
+  const location = new TextInputBuilder()
+    .setCustomId("location")
+    .setLabel("Location / Planet / POI")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("e.g., OM-1, Ghost Hollow, outpost name")
+    .setRequired(true);
+
+  const objective = new TextInputBuilder()
+    .setCustomId("objective")
+    .setLabel("Recon Objective")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("Intel, route scan, overwatch, ID hostiles, etc.")
+    .setRequired(true);
+
+  const hostiles = new TextInputBuilder()
+    .setCustomId("hostiles")
+    .setLabel("Hostiles")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("Unknown / Light / Heavy (type & count if known)")
+    .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(ign),
+    new ActionRowBuilder().addComponents(system),
+    new ActionRowBuilder().addComponents(location),
+    new ActionRowBuilder().addComponents(objective),
+    new ActionRowBuilder().addComponents(hostiles)
   );
 
   return modal;
@@ -158,7 +237,7 @@ function buildRescueReportModal() {
 
   const threats = new TextInputBuilder()
     .setCustomId("threats")
-    .setLabel("Hostiles / Threats (optional)")
+    .setLabel("Threats (optional)")
     .setStyle(TextInputStyle.Short)
     .setPlaceholder("None / Light / Heavy (details)")
     .setRequired(false);
@@ -167,7 +246,7 @@ function buildRescueReportModal() {
     .setCustomId("lessons")
     .setLabel("Notes / Lessons learned (optional)")
     .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder("Anything to improve for next time?")
+    .setPlaceholder("Anything to improve next time?")
     .setRequired(false);
 
   modal.addComponents(
@@ -180,73 +259,97 @@ function buildRescueReportModal() {
   return modal;
 }
 
+function buildReconReportModal() {
+  const modal = new ModalBuilder().setCustomId(RECON_REPORT_MODAL_ID).setTitle("Phoenix Recon Report");
+
+  const outcome = new TextInputBuilder()
+    .setCustomId("outcome")
+    .setLabel("Outcome")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("Complete / Partial / Aborted")
+    .setRequired(true);
+
+  const intel = new TextInputBuilder()
+    .setCustomId("intel")
+    .setLabel("Intel Summary")
+    .setStyle(TextInputStyle.Paragraph)
+    .setPlaceholder("What did you find? Routes, ships, timing, numbers, etc.")
+    .setRequired(true);
+
+  const threats = new TextInputBuilder()
+    .setCustomId("threats")
+    .setLabel("Threats observed (optional)")
+    .setStyle(TextInputStyle.Short)
+    .setPlaceholder("None / Light / Heavy (details)")
+    .setRequired(false);
+
+  const next = new TextInputBuilder()
+    .setCustomId("next")
+    .setLabel("Recommended next action (optional)")
+    .setStyle(TextInputStyle.Paragraph)
+    .setPlaceholder("Ex: Avoid route, bring escorts, approach from X, etc.")
+    .setRequired(false);
+
+  modal.addComponents(
+    new ActionRowBuilder().addComponents(outcome),
+    new ActionRowBuilder().addComponents(intel),
+    new ActionRowBuilder().addComponents(threats),
+    new ActionRowBuilder().addComponents(next)
+  );
+
+  return modal;
+}
+
 function parseTicketInfo(channel) {
   const topic = channel?.topic || "";
-  const requesterMatch = topic.match(/Rescue ticket for (\d+)/);
+  const requesterMatch = topic.match(/(Rescue|Recon) ticket for (\d+)/);
   const claimedMatch = topic.match(/CLAIMED_BY:(\d+)/);
   return {
-    requesterId: requesterMatch ? requesterMatch[1] : null,
+    requesterId: requesterMatch ? requesterMatch[2] : null,
     claimedById: claimedMatch ? claimedMatch[1] : null,
   };
 }
 
-// ---------- Startup: update panels (no duplicates) ----------
+// ---------- Startup: update panels ----------
 client.once("ready", async () => {
   console.log(`🟣 Phoenix Squadron Bot Online as ${client.user.tag}`);
 
   const onDutyChannelId = process.env.ON_DUTY_CHANNEL_ID;
-  const rescueChannelId = process.env.RESCUE_CHANNEL_ID;
+  const opsChannelId = process.env.RESCUE_CHANNEL_ID; // reuse your existing ops panel channel
   const dutyPanelId = process.env.ON_DUTY_PANEL_ID;
-  const rescuePanelId = process.env.RESCUE_PANEL_ID;
+  const opsPanelId = process.env.RESCUE_PANEL_ID; // reuse existing message ID
 
-  if (!onDutyChannelId || !rescueChannelId || !dutyPanelId || !rescuePanelId) {
+  if (!onDutyChannelId || !opsChannelId || !dutyPanelId || !opsPanelId) {
     console.log("❌ Missing env vars: ON_DUTY_CHANNEL_ID, RESCUE_CHANNEL_ID, ON_DUTY_PANEL_ID, RESCUE_PANEL_ID");
     return;
   }
 
   const onDutyChannel = await client.channels.fetch(onDutyChannelId).catch(() => null);
-  const rescueChannel = await client.channels.fetch(rescueChannelId).catch(() => null);
+  const opsChannel = await client.channels.fetch(opsChannelId).catch(() => null);
 
   if (!onDutyChannel || !onDutyChannel.isTextBased()) {
     console.log("❌ Could not access ON_DUTY_CHANNEL_ID.");
     return;
   }
-  if (!rescueChannel || !rescueChannel.isTextBased()) {
+  if (!opsChannel || !opsChannel.isTextBased()) {
     console.log("❌ Could not access RESCUE_CHANNEL_ID.");
     return;
   }
 
-const dutyRow = new ActionRowBuilder().addComponents(
-  new ButtonBuilder()
-    .setCustomId("go_on_duty")
-    .setLabel("🟢 Go On Duty")
-    .setStyle(ButtonStyle.Success),
-
-  new ButtonBuilder()
-    .setCustomId("go_off_duty")
-    .setLabel("🔴 Go Off Duty")
-    .setStyle(ButtonStyle.Danger)
-);
-
-
-  const rescueRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("request_rescue").setLabel("Request Extraction").setStyle(ButtonStyle.Danger)
-  );
-
   const dutyMsg = await onDutyChannel.messages.fetch(dutyPanelId).catch(() => null);
   if (dutyMsg) {
-    await dutyMsg.edit({ embeds: [buildDutyEmbed(onDutyChannel.guild)], components: [dutyRow] });
-    console.log("✅ Updated existing On Duty panel.");
+    await dutyMsg.edit({ embeds: [buildDutyEmbed(onDutyChannel.guild)], components: [dutyButtonsRow()] });
+    console.log("✅ Updated Duty panel (On/Off buttons).");
   } else {
-    console.log("❌ Could not fetch On Duty panel message (check ON_DUTY_PANEL_ID).");
+    console.log("❌ Could not fetch Duty panel message (check ON_DUTY_PANEL_ID).");
   }
 
-  const rescueMsg = await rescueChannel.messages.fetch(rescuePanelId).catch(() => null);
-  if (rescueMsg) {
-    await rescueMsg.edit({ embeds: [buildRescueEmbed()], components: [rescueRow] });
-    console.log("✅ Updated existing Rescue panel.");
+  const opsMsg = await opsChannel.messages.fetch(opsPanelId).catch(() => null);
+  if (opsMsg) {
+    await opsMsg.edit({ embeds: [buildOpsEmbed()], components: [opsButtonsRow()] });
+    console.log("✅ Updated Ops panel (Extraction + Recon).");
   } else {
-    console.log("❌ Could not fetch Rescue panel message (check RESCUE_PANEL_ID).");
+    console.log("❌ Could not fetch Ops panel message (check RESCUE_PANEL_ID).");
   }
 });
 
@@ -256,94 +359,73 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.isButton()) {
     const guild = interaction.guild;
     const member = interaction.member;
-    const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
 
-    // TOGGLE DUTY
-   // GO ON DUTY
-if (interaction.customId === "go_on_duty") {
-  const role = guild.roles.cache.find(r => r.name === ON_DUTY_ROLE);
-  if (!role)
-    return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
-
-  if (member.roles.cache.has(role.id)) {
-    return interaction.reply({ content: "🟢 You are already ON Duty.", ephemeral: true });
-  }
-
-  try {
-    await member.roles.add(role);
-    await refreshDutyPanel();
-    return interaction.reply({ content: "🟢 You are now ON Duty.", ephemeral: true });
-  } catch (e) {
-    console.error("Failed to add duty role:", e);
-    return interaction.reply({ content: "❌ Could not assign role. Check permissions.", ephemeral: true });
-  }
-}
-
-// GO OFF DUTY
-if (interaction.customId === "go_off_duty") {
-  const role = guild.roles.cache.find(r => r.name === ON_DUTY_ROLE);
-  if (!role)
-    return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
-
-  if (!member.roles.cache.has(role.id)) {
-    return interaction.reply({ content: "🔴 You are already OFF Duty.", ephemeral: true });
-  }
-
-  try {
-    await member.roles.remove(role);
-    await refreshDutyPanel();
-    return interaction.reply({ content: "🔴 You are now OFF Duty.", ephemeral: true });
-  } catch (e) {
-    console.error("Failed to remove duty role:", e);
-    return interaction.reply({ content: "❌ Could not remove role. Check permissions.", ephemeral: true });
-  }
-}
-
+    // GO ON DUTY
+    if (interaction.customId === "go_on_duty") {
+      const role = getRoleByName(guild, ON_DUTY_ROLE);
       if (!role) return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
 
+      if (member.roles.cache.has(role.id)) {
+        return interaction.reply({ content: "🟢 You are already **ON Duty**.", ephemeral: true });
+      }
+
       try {
-        const wasOnDuty = member.roles.cache.has(role.id);
-        if (wasOnDuty) await member.roles.remove(role);
-        else await member.roles.add(role);
-
+        await member.roles.add(role);
         await refreshDutyPanel();
-
-        return interaction.reply({
-          content: wasOnDuty ? "🟣 You are now **OFF Duty**." : "🟣 You are now **ON Duty**.",
-          ephemeral: true,
-        });
+        return interaction.reply({ content: "🟢 You are now **ON Duty**.", ephemeral: true });
       } catch (e) {
-        console.error("❌ Failed to toggle duty:", e);
-        return interaction.reply({
-          content: "❌ I couldn't change your role. Check role hierarchy + Manage Roles permission.",
-          ephemeral: true,
-        });
+        console.error("❌ Failed to set ON duty:", e);
+        return interaction.reply({ content: "❌ Could not assign role. Check permissions/role order.", ephemeral: true });
       }
     }
 
-    // REQUEST RESCUE -> SHOW MODAL
-    if (interaction.customId === "request_rescue") {
+    // GO OFF DUTY
+    if (interaction.customId === "go_off_duty") {
+      const role = getRoleByName(guild, ON_DUTY_ROLE);
       if (!role) return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
 
+      if (!member.roles.cache.has(role.id)) {
+        return interaction.reply({ content: "🔴 You are already **OFF Duty**.", ephemeral: true });
+      }
+
+      try {
+        await member.roles.remove(role);
+        await refreshDutyPanel();
+        return interaction.reply({ content: "🔴 You are now **OFF Duty**.", ephemeral: true });
+      } catch (e) {
+        console.error("❌ Failed to set OFF duty:", e);
+        return interaction.reply({ content: "❌ Could not remove role. Check permissions/role order.", ephemeral: true });
+      }
+    }
+
+    // REQUEST EXTRACTION -> MODAL
+    if (interaction.customId === "request_rescue") {
       const existing = guild.channels.cache.find(
         (c) => c.type === 0 && c.topic === `Rescue ticket for ${interaction.user.id}`
       );
       if (existing) {
-        return interaction.reply({
-          content: `⚠️ You already have an active rescue ticket: ${existing}`,
-          ephemeral: true,
-        });
+        return interaction.reply({ content: `⚠️ You already have an active rescue ticket: ${existing}`, ephemeral: true });
       }
-
       return interaction.showModal(buildRescueModal());
     }
 
-    // CLAIM (Assigned Medic + lock)
-    if (interaction.customId === "claim_rescue") {
+    // REQUEST RECON -> MODAL
+    if (interaction.customId === "request_recon") {
+      const existing = guild.channels.cache.find(
+        (c) => c.type === 0 && c.topic === `Recon ticket for ${interaction.user.id}`
+      );
+      if (existing) {
+        return interaction.reply({ content: `⚠️ You already have an active recon ticket: ${existing}`, ephemeral: true });
+      }
+      return interaction.showModal(buildReconModal());
+    }
+
+    // CLAIM (rescue or recon)
+    if (interaction.customId === "claim_rescue" || interaction.customId === "claim_recon") {
       const channel = interaction.channel;
 
       if (channel.topic && channel.topic.includes("CLAIMED_BY:")) {
-        return interaction.reply({ content: "⚠️ This rescue has already been claimed.", ephemeral: true });
+        return interaction.reply({ content: "⚠️ This ticket has already been claimed.", ephemeral: true });
       }
 
       const baseTopic = channel.topic || "";
@@ -354,22 +436,22 @@ if (interaction.customId === "go_off_duty") {
       if (messages) {
         const oldest = messages.last();
         if (oldest) {
-          const alreadyHasAssigned = oldest.content.includes("Assigned Medic:");
-          const updatedContent = alreadyHasAssigned
+          const tag = interaction.customId === "claim_recon" ? "Assigned Recon" : "Assigned Medic";
+          const already = oldest.content.includes(tag);
+          const updatedContent = already
             ? oldest.content
-            : `${oldest.content}\n\n🩺 **Assigned Medic:** <@${interaction.user.id}>`;
+            : `${oldest.content}\n\n🩺 **${tag}:** <@${interaction.user.id}>`;
           await oldest.edit({ content: updatedContent, components: oldest.components }).catch(() => {});
         }
       }
 
-      await logEvent(interaction.guild, `🔒 **Rescue Claimed** — <@${interaction.user.id}> claimed ${channel}`);
-      return interaction.reply({ content: "🔒 You have claimed this rescue.", ephemeral: true });
+      await logEvent(interaction.guild, `🔒 **Ticket Claimed** — <@${interaction.user.id}> claimed ${channel}`);
+      return interaction.reply({ content: "🔒 Claim confirmed.", ephemeral: true });
     }
 
-    // CLOSE -> OPEN REPORT MODAL
-    if (interaction.customId === "close_rescue") {
-      return interaction.showModal(buildRescueReportModal());
-    }
+    // CLOSE -> REPORT MODAL
+    if (interaction.customId === "close_rescue") return interaction.showModal(buildRescueReportModal());
+    if (interaction.customId === "close_recon") return interaction.showModal(buildReconReportModal());
 
     return;
   }
@@ -377,9 +459,7 @@ if (interaction.customId === "go_off_duty") {
   // RESCUE REQUEST MODAL SUBMIT
   if (interaction.isModalSubmit() && interaction.customId === RESCUE_MODAL_ID) {
     const guild = interaction.guild;
-    const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
-
-    if (!role) return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
+    const onDutyRole = getRoleByName(guild, ON_DUTY_ROLE);
 
     try {
       await interaction.deferReply({ ephemeral: true });
@@ -387,9 +467,7 @@ if (interaction.customId === "go_off_duty") {
       const existing = guild.channels.cache.find(
         (c) => c.type === 0 && c.topic === `Rescue ticket for ${interaction.user.id}`
       );
-      if (existing) {
-        return interaction.editReply(`⚠️ You already have an active rescue ticket: ${existing}`);
-      }
+      if (existing) return interaction.editReply(`⚠️ You already have an active rescue ticket: ${existing}`);
 
       const ign = interaction.fields.getTextInputValue("ign");
       const system = interaction.fields.getTextInputValue("system");
@@ -397,10 +475,7 @@ if (interaction.customId === "go_off_duty") {
       const hostiles = interaction.fields.getTextInputValue("hostiles");
       const notes = interaction.fields.getTextInputValue("notes") || "—";
 
-      const channelName = `rescue-${interaction.user.username}`
-        .toLowerCase()
-        .replace(/[^a-z0-9-]/g, "")
-        .slice(0, 90);
+      const channelName = `rescue-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 90);
 
       const channel = await guild.channels.create({
         name: channelName,
@@ -425,18 +500,21 @@ if (interaction.customId === "go_off_duty") {
               PermissionsBitField.Flags.ReadMessageHistory,
             ],
           },
-          {
-            id: role.id,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory,
-            ],
-          },
+          ...(onDutyRole
+            ? [
+                {
+                  id: onDutyRole.id,
+                  allow: [
+                    PermissionsBitField.Flags.ViewChannel,
+                    PermissionsBitField.Flags.SendMessages,
+                    PermissionsBitField.Flags.ReadMessageHistory,
+                  ],
+                },
+              ]
+            : []),
         ],
       });
 
-      // safety vs category perms
       await channel.permissionOverwrites.edit(guild.members.me.id, {
         ViewChannel: true,
         SendMessages: true,
@@ -457,9 +535,9 @@ if (interaction.customId === "go_off_duty") {
 
       const activeMedics = getOnDutyCount(guild);
 
-      if (activeMedics > 0) {
+      if (onDutyRole && activeMedics > 0) {
         await channel.send({
-          content: `🚨 <@&${role.id}> Rescue request from <@${interaction.user.id}>\n\n${details}`,
+          content: `🚨 <@&${onDutyRole.id}> Rescue request from <@${interaction.user.id}>\n\n${details}`,
           components: [row],
         });
       } else {
@@ -470,16 +548,113 @@ if (interaction.customId === "go_off_duty") {
             `${details}`,
           components: [row],
         });
-        await logEvent(guild, `⚠️ **No Medics Available** — Rescue opened by <@${interaction.user.id}>`);
       }
 
       await logEvent(guild, `🆕 **Rescue Opened** — <@${interaction.user.id}> in ${channel}`);
       return interaction.editReply(`🚑 Rescue channel created: ${channel}`);
     } catch (e) {
       console.error("❌ Rescue request modal submit failed:", e);
-      if (!interaction.replied) {
-        return interaction.reply({ content: "❌ Failed to create ticket. Check logs.", ephemeral: true });
+      return interaction.reply({ content: "❌ Failed to create rescue ticket. Check logs.", ephemeral: true });
+    }
+  }
+
+  // RECON REQUEST MODAL SUBMIT
+  if (interaction.isModalSubmit() && interaction.customId === RECON_MODAL_ID) {
+    const guild = interaction.guild;
+    const reconRole = getRoleByName(guild, RECON_ROLE);
+
+    try {
+      await interaction.deferReply({ ephemeral: true });
+
+      const existing = guild.channels.cache.find(
+        (c) => c.type === 0 && c.topic === `Recon ticket for ${interaction.user.id}`
+      );
+      if (existing) return interaction.editReply(`⚠️ You already have an active recon ticket: ${existing}`);
+
+      const ign = interaction.fields.getTextInputValue("ign");
+      const system = interaction.fields.getTextInputValue("system");
+      const location = interaction.fields.getTextInputValue("location");
+      const objective = interaction.fields.getTextInputValue("objective");
+      const hostiles = interaction.fields.getTextInputValue("hostiles");
+
+      const channelName = `recon-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 90);
+
+      const channel = await guild.channels.create({
+        name: channelName,
+        parent: process.env.RECON_CATEGORY_ID || null,
+        type: 0,
+        topic: `Recon ticket for ${interaction.user.id}`,
+        permissionOverwrites: [
+          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+          {
+            id: guild.members.me.id,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory,
+            ],
+          },
+          {
+            id: interaction.user.id,
+            allow: [
+              PermissionsBitField.Flags.ViewChannel,
+              PermissionsBitField.Flags.SendMessages,
+              PermissionsBitField.Flags.ReadMessageHistory,
+            ],
+          },
+          ...(reconRole
+            ? [
+                {
+                  id: reconRole.id,
+                  allow: [
+                    PermissionsBitField.Flags.ViewChannel,
+                    PermissionsBitField.Flags.SendMessages,
+                    PermissionsBitField.Flags.ReadMessageHistory,
+                  ],
+                },
+              ]
+            : []),
+        ],
+      });
+
+      await channel.permissionOverwrites.edit(guild.members.me.id, {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+      });
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("claim_recon").setLabel("🔒 Claim Recon").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("close_recon").setLabel("✅ Close Recon").setStyle(ButtonStyle.Danger)
+      );
+
+      const details =
+        `🎮 **IGN:** ${ign}\n` +
+        `📍 **System:** ${system}\n` +
+        `📌 **Location/POI:** ${location}\n` +
+        `🎯 **Objective:** ${objective}\n` +
+        `⚔️ **Hostiles:** ${hostiles}`;
+
+      if (reconRole) {
+        await channel.send({
+          content: `🛰️ <@&${reconRole.id}> Recon request from <@${interaction.user.id}>\n\n${details}`,
+          components: [row],
+        });
+      } else {
+        await channel.send({
+          content:
+            `🛰️ Recon request from <@${interaction.user.id}>\n\n` +
+            `⚠️ **Recon role not found (${RECON_ROLE}).** Create the role to enable pings.\n\n` +
+            `${details}`,
+          components: [row],
+        });
       }
+
+      await logEvent(guild, `🆕 **Recon Opened** — <@${interaction.user.id}> in ${channel}`);
+      return interaction.editReply(`🛰️ Recon channel created: ${channel}`);
+    } catch (e) {
+      console.error("❌ Recon request modal submit failed:", e);
+      return interaction.reply({ content: "❌ Failed to create recon ticket. Check logs.", ephemeral: true });
     }
   }
 
@@ -490,7 +665,6 @@ if (interaction.customId === "go_off_duty") {
 
       const channel = interaction.channel;
       const guild = interaction.guild;
-
       const { requesterId, claimedById } = parseTicketInfo(channel);
 
       const outcome = interaction.fields.getTextInputValue("outcome");
@@ -498,15 +672,12 @@ if (interaction.customId === "go_off_duty") {
       const threats = interaction.fields.getTextInputValue("threats") || "—";
       const lessons = interaction.fields.getTextInputValue("lessons") || "—";
 
-      const requesterTag = requesterId ? `<@${requesterId}>` : "Unknown";
-      const assignedTag = claimedById ? `<@${claimedById}>` : "Unassigned";
-
       await logEvent(
         guild,
         `📝 **Rescue Report Submitted**\n` +
           `• **Ticket:** ${channel}\n` +
-          `• **Requester:** ${requesterTag}\n` +
-          `• **Assigned Medic:** ${assignedTag}\n` +
+          `• **Requester:** ${requesterId ? `<@${requesterId}>` : "Unknown"}\n` +
+          `• **Assigned:** ${claimedById ? `<@${claimedById}>` : "Unassigned"}\n` +
           `• **Submitted By:** <@${interaction.user.id}>\n` +
           `• **Outcome:** ${outcome}\n` +
           `• **Threats:** ${threats}\n` +
@@ -514,15 +685,48 @@ if (interaction.customId === "go_off_duty") {
           `• **Notes:** ${lessons}`
       );
 
-      await interaction.editReply("✅ Report submitted. Closing ticket in 5 seconds...");
+      await interaction.editReply("✅ Rescue report submitted. Closing ticket in 5 seconds...");
       setTimeout(() => channel.delete().catch(() => {}), 5000);
       return;
     } catch (e) {
       console.error("❌ Rescue report modal submit failed:", e);
-      if (!interaction.replied && !interaction.deferred) {
-        return interaction.reply({ content: "❌ Report failed to submit. Check logs.", ephemeral: true });
-      }
-      return interaction.editReply("❌ Report failed to submit. Check logs.");
+      return interaction.reply({ content: "❌ Rescue report failed. Check logs.", ephemeral: true });
+    }
+  }
+
+  // RECON REPORT MODAL SUBMIT
+  if (interaction.isModalSubmit() && interaction.customId === RECON_REPORT_MODAL_ID) {
+    try {
+      await interaction.deferReply({ ephemeral: true });
+
+      const channel = interaction.channel;
+      const guild = interaction.guild;
+      const { requesterId, claimedById } = parseTicketInfo(channel);
+
+      const outcome = interaction.fields.getTextInputValue("outcome");
+      const intel = interaction.fields.getTextInputValue("intel");
+      const threats = interaction.fields.getTextInputValue("threats") || "—";
+      const next = interaction.fields.getTextInputValue("next") || "—";
+
+      await logEvent(
+        guild,
+        `🛰️ **Recon Report Submitted**\n` +
+          `• **Ticket:** ${channel}\n` +
+          `• **Requester:** ${requesterId ? `<@${requesterId}>` : "Unknown"}\n` +
+          `• **Assigned:** ${claimedById ? `<@${claimedById}>` : "Unassigned"}\n` +
+          `• **Submitted By:** <@${interaction.user.id}>\n` +
+          `• **Outcome:** ${outcome}\n` +
+          `• **Threats:** ${threats}\n` +
+          `• **Intel:** ${intel}\n` +
+          `• **Next Action:** ${next}`
+      );
+
+      await interaction.editReply("✅ Recon report submitted. Closing ticket in 5 seconds...");
+      setTimeout(() => channel.delete().catch(() => {}), 5000);
+      return;
+    } catch (e) {
+      console.error("❌ Recon report modal submit failed:", e);
+      return interaction.reply({ content: "❌ Recon report failed. Check logs.", ephemeral: true });
     }
   }
 });
