@@ -127,7 +127,7 @@ function buildRescueModal() {
     .setCustomId("Name")
     .setLabel("In-game name (Name)")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g., Bob")
+    .setPlaceholder("...")
     .setRequired(true);
 
   const system = new TextInputBuilder()
@@ -176,7 +176,7 @@ function buildReconModal() {
     .setCustomId("Name")
     .setLabel("Name")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g., Bob)
+    .setPlaceholder("...")
     .setRequired(true);
 
   const system = new TextInputBuilder()
@@ -190,7 +190,7 @@ function buildReconModal() {
     .setCustomId("location")
     .setLabel("Location / Planet / POI")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g., OM-1, Ghost Hollow, outpost name")
+    .setPlaceholder("OM-1, Ghost Hollow, outpost name")
     .setRequired(true);
 
   const objective = new TextInputBuilder()
