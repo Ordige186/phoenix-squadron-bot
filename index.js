@@ -17,17 +17,18 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
 
-// Roles
+// -------------------- CONFIG (Names) --------------------
 const ON_DUTY_ROLE = "Phoenix On Duty";
-const RECON_ROLE = "Phoenix Recon";
+const BLACKHAWK_ROLE = "Blackhawk Recon";
 
-// Modal IDs
-const RESCUE_MODAL_ID = "rescue_request_modal";
-const RESCUE_REPORT_MODAL_ID = "rescue_report_modal";
-const RECON_MODAL_ID = "recon_request_modal";
-const RECON_REPORT_MODAL_ID = "recon_report_modal";
+// -------------------- MODAL IDs --------------------
+const MEDICAL_MODAL_ID = "medical_request_modal";
+const MEDICAL_REPORT_MODAL_ID = "medical_report_modal";
 
-// ---------- Helpers ----------
+const BLACKHAWK_MODAL_ID = "blackhawk_request_modal";
+const BLACKHAWK_REPORT_MODAL_ID = "blackhawk_report_modal";
+
+// -------------------- HELPERS --------------------
 function getRoleByName(guild, roleName) {
   return guild.roles.cache.find((r) => r.name === roleName) || null;
 }
@@ -37,47 +38,51 @@ function getRoleCount(guild, roleName) {
   return role ? role.members.size : 0;
 }
 
-function getOnDutyCount(guild) {
-  return getRoleCount(guild, ON_DUTY_ROLE);
-}
-
 function buildDutyEmbed(guild) {
-  const activeCount = getOnDutyCount(guild);
+  const activeCount = getRoleCount(guild, ON_DUTY_ROLE);
   return {
     title: "🟣 Phoenix Squadron — Duty Status",
     description:
       "**Response Protocol Active**\n\n" +
       `🩺 **Phoenix On Duty Active:** **${activeCount}**\n\n` +
-      "Use the buttons below to set your response status.\n\n" +
-      "• On Duty → You will be pinged for rescues\n" +
+      "Set your response status:\n" +
+      "• On Duty → You will be pinged for Medical/Extraction tickets\n" +
       "• Off Duty → No notifications",
     color: 0x6a0dad,
     footer: { text: "Phoenix Response System" },
   };
 }
 
-function buildOpsEmbed() {
+function buildMedicalEmbed() {
   return {
-    title: "🚨 Phoenix Requests — Extraction & Recon",
+    title: "🩺 Phoenix — Medical / Extraction Requests",
     description:
-      "Use the buttons below to open a **private ticket**.\n\n" +
-      "**Extraction / Medical**:\n" +
-      "• Name • System • Planet/POI • Hostiles • Notes\n\n" +
-      "**Recon**:\n" +
-      "• Name • System • Location/POI • Objective",
+      "Open a **private medical/extraction ticket**.\n\n" +
+      "You will be asked for:\n" +
+      "• In-game name (IGN)\n" +
+      "• System\n" +
+      "• Planet/POI\n" +
+      "• Hostiles\n" +
+      "• Notes",
     color: 0x6a0dad,
-    footer: { text: "Phoenix Response System" },
+    footer: { text: "Phoenix Medical Dispatch" },
   };
 }
 
-async function logEvent(guild, text) {
-  const logId = process.env.LOG_CHANNEL_ID;
-  if (!logId) return;
-
-  const ch = await client.channels.fetch(logId).catch(() => null);
-  if (!ch || !ch.isTextBased()) return;
-
-  await ch.send(text).catch(() => {});
+function buildBlackhawkEmbed() {
+  return {
+    title: "🛰️ Blackhawk Recon — Recon Requests",
+    description:
+      "Open a **private recon ticket** for intel / overwatch / route scan.\n\n" +
+      "You will be asked for:\n" +
+      "• In-game name (IGN)\n" +
+      "• System\n" +
+      "• Location/POI\n" +
+      "• Objective\n" +
+      "• Hostiles",
+    color: 0x111111,
+    footer: { text: "Blackhawk Recon Cell" },
+  };
 }
 
 function dutyButtonsRow() {
@@ -91,6 +96,50 @@ function dutyButtonsRow() {
       .setLabel("🔴 Go Off Duty")
       .setStyle(ButtonStyle.Danger)
   );
+}
+
+function medicalButtonsRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("request_medical")
+      .setLabel("Medical / Extraction")
+      .setStyle(ButtonStyle.Danger)
+  );
+}
+
+function blackhawkButtonsRow() {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("request_blackhawk")
+      .setLabel("Request Blackhawk Recon")
+      .setStyle(ButtonStyle.Primary)
+  );
+}
+
+async function logEvent(guild, text) {
+  const logId = process.env.LOG_CHANNEL_ID;
+  if (!logId) return;
+
+  const ch = await client.channels.fetch(logId).catch(() => null);
+  if (!ch || !ch.isTextBased()) return;
+
+  await ch.send(text).catch(() => {});
+}
+
+async function upsertPanelMessage(channel, panelMessageId, payload, createLabel) {
+  // Updates an existing message if ID is provided & valid, otherwise creates a new one.
+  // If it creates a new one, it prints the new message ID so you can copy into Railway vars.
+  if (panelMessageId) {
+    const msg = await channel.messages.fetch(panelMessageId).catch(() => null);
+    if (msg) {
+      await msg.edit(payload);
+      return { mode: "updated", messageId: msg.id };
+    }
+  }
+
+  const created = await channel.send(payload);
+  console.log(`🆕 Created new ${createLabel} panel message: ${created.id}`);
+  return { mode: "created", messageId: created.id };
 }
 
 async function refreshDutyPanel() {
@@ -107,39 +156,38 @@ async function refreshDutyPanel() {
   await msg.edit({ embeds: [buildDutyEmbed(ch.guild)], components: [dutyButtonsRow()] }).catch(() => {});
 }
 
-function opsButtonsRow() {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("request_rescue")
-      .setLabel("Request Extraction")
-      .setStyle(ButtonStyle.Danger),
-    new ButtonBuilder()
-      .setCustomId("request_recon")
-      .setLabel("Request Recon")
-      .setStyle(ButtonStyle.Primary)
-  );
+function parseTicketInfo(channel) {
+  const topic = channel?.topic || "";
+  const requesterMatch = topic.match(/(Medical|Blackhawk) ticket for (\d+)/);
+  const claimedMatch = topic.match(/CLAIMED_BY:(\d+)/);
+  return {
+    kind: requesterMatch ? requesterMatch[1] : null,
+    requesterId: requesterMatch ? requesterMatch[2] : null,
+    claimedById: claimedMatch ? claimedMatch[1] : null,
+  };
 }
 
-function buildRescueModal() {
-  const modal = new ModalBuilder().setCustomId(RESCUE_MODAL_ID).setTitle("Phoenix Rescue Request");
+// -------------------- MODALS --------------------
+function buildMedicalModal() {
+  const modal = new ModalBuilder().setCustomId(MEDICAL_MODAL_ID).setTitle("Medical / Extraction Request");
 
-  const name = new TextInputBuilder()
-    .setCustomId("Name")
-    .setLabel("In-game name (Name)")
+  const ign = new TextInputBuilder()
+    .setCustomId("ign")
+    .setLabel("In-game name (IGN)")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("...")
+    .setPlaceholder("e.g., MikeOrtiz")
     .setRequired(true);
 
   const system = new TextInputBuilder()
     .setCustomId("system")
     .setLabel("System")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("Nyx, Pyro, Stanton")
+    .setPlaceholder("Stanton, Pyro, Nyx")
     .setRequired(true);
 
   const planet = new TextInputBuilder()
     .setCustomId("planet")
-    .setLabel("Planet / Moon / POI")
+    .setLabel("Planet / POI")
     .setStyle(TextInputStyle.Short)
     .setPlaceholder("Hurston, Daymar, Ruin Station")
     .setRequired(true);
@@ -148,12 +196,12 @@ function buildRescueModal() {
     .setCustomId("hostiles")
     .setLabel("Hostiles")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("None / Light / Heavy (type & count if known)")
+    .setPlaceholder("None / Light / Heavy (details)")
     .setRequired(true);
 
   const notes = new TextInputBuilder()
     .setCustomId("notes")
-    .setLabel("Extra details (optional)")
+    .setLabel("Notes (optional)")
     .setStyle(TextInputStyle.Paragraph)
     .setPlaceholder("Injuries, ship status, marker, comms, preferred pickup, etc.")
     .setRequired(false);
@@ -169,46 +217,46 @@ function buildRescueModal() {
   return modal;
 }
 
-function buildReconModal() {
-  const modal = new ModalBuilder().setCustomId(RECON_MODAL_ID).setTitle("Phoenix Recon Request");
+function buildBlackhawkModal() {
+  const modal = new ModalBuilder().setCustomId(BLACKHAWK_MODAL_ID).setTitle("Blackhawk Recon Request");
 
-  const name = new TextInputBuilder()
-    .setCustomId("Name")
-    .setLabel("Name")
+  const ign = new TextInputBuilder()
+    .setCustomId("ign")
+    .setLabel("In-game name (IGN)")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("...")
+    .setPlaceholder("e.g., MikeOrtiz")
     .setRequired(true);
 
   const system = new TextInputBuilder()
     .setCustomId("system")
     .setLabel("System")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("Nyx, Pyro, Stanton")
+    .setPlaceholder("Stanton, Pyro, Nyx")
     .setRequired(true);
 
   const location = new TextInputBuilder()
     .setCustomId("location")
-    .setLabel("Location / Planet / POI")
+    .setLabel("Location / POI")
     .setStyle(TextInputStyle.Short)
     .setPlaceholder("OM-1, Ghost Hollow, outpost name")
     .setRequired(true);
 
   const objective = new TextInputBuilder()
     .setCustomId("objective")
-    .setLabel("Recon Objective")
+    .setLabel("Objective")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("Intel, route scan, overwatch, ID hostiles, etc.")
+    .setPlaceholder("Overwatch, intel, route scan, ID hostiles")
     .setRequired(true);
 
   const hostiles = new TextInputBuilder()
     .setCustomId("hostiles")
     .setLabel("Hostiles")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("Unknown / Light / Heavy (type & count if known)")
+    .setPlaceholder("Unknown / Light / Heavy (details)")
     .setRequired(true);
 
   modal.addComponents(
-    new ActionRowBuilder().addComponents(Name),
+    new ActionRowBuilder().addComponents(ign),
     new ActionRowBuilder().addComponents(system),
     new ActionRowBuilder().addComponents(location),
     new ActionRowBuilder().addComponents(objective),
@@ -218,8 +266,8 @@ function buildReconModal() {
   return modal;
 }
 
-function buildRescueReportModal() {
-  const modal = new ModalBuilder().setCustomId(RESCUE_REPORT_MODAL_ID).setTitle("Phoenix Rescue Report");
+function buildMedicalReportModal() {
+  const modal = new ModalBuilder().setCustomId(MEDICAL_REPORT_MODAL_ID).setTitle("Medical / Extraction Report");
 
   const outcome = new TextInputBuilder()
     .setCustomId("outcome")
@@ -244,7 +292,7 @@ function buildRescueReportModal() {
 
   const lessons = new TextInputBuilder()
     .setCustomId("lessons")
-    .setLabel("Notes / Lessons learned (optional)")
+    .setLabel("Notes / Lessons (optional)")
     .setStyle(TextInputStyle.Paragraph)
     .setPlaceholder("Anything to improve next time?")
     .setRequired(false);
@@ -259,8 +307,8 @@ function buildRescueReportModal() {
   return modal;
 }
 
-function buildReconReportModal() {
-  const modal = new ModalBuilder().setCustomId(RECON_REPORT_MODAL_ID).setTitle("Phoenix Recon Report");
+function buildBlackhawkReportModal() {
+  const modal = new ModalBuilder().setCustomId(BLACKHAWK_REPORT_MODAL_ID).setTitle("Blackhawk Recon Report");
 
   const outcome = new TextInputBuilder()
     .setCustomId("outcome")
@@ -287,7 +335,7 @@ function buildReconReportModal() {
     .setCustomId("next")
     .setLabel("Recommended next action (optional)")
     .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder("Ex: Avoid route, bring escorts, approach from X, etc.")
+    .setPlaceholder("Avoid route, bring escorts, approach from X, etc.")
     .setRequired(false);
 
   modal.addComponents(
@@ -300,67 +348,110 @@ function buildReconReportModal() {
   return modal;
 }
 
-function parseTicketInfo(channel) {
-  const topic = channel?.topic || "";
-  const requesterMatch = topic.match(/(Rescue|Recon) ticket for (\d+)/);
-  const claimedMatch = topic.match(/CLAIMED_BY:(\d+)/);
-  return {
-    requesterId: requesterMatch ? requesterMatch[2] : null,
-    claimedById: claimedMatch ? claimedMatch[1] : null,
-  };
-}
-
-// ---------- Startup: update panels ----------
+// -------------------- READY: UPDATE PANELS --------------------
 client.once("ready", async () => {
   console.log(`🟣 Phoenix Squadron Bot Online as ${client.user.tag}`);
 
+  // Duty panel
   const onDutyChannelId = process.env.ON_DUTY_CHANNEL_ID;
-  const opsChannelId = process.env.RESCUE_CHANNEL_ID; // reuse your existing ops panel channel
-  const dutyPanelId = process.env.ON_DUTY_PANEL_ID;
-  const opsPanelId = process.env.RESCUE_PANEL_ID; // reuse existing message ID
+  const onDutyPanelId = process.env.ON_DUTY_PANEL_ID;
 
-  if (!onDutyChannelId || !opsChannelId || !dutyPanelId || !opsPanelId) {
-    console.log("❌ Missing env vars: ON_DUTY_CHANNEL_ID, RESCUE_CHANNEL_ID, ON_DUTY_PANEL_ID, RESCUE_PANEL_ID");
+  // Medical panel (reusing your existing RESCUE_CHANNEL_ID / RESCUE_PANEL_ID vars)
+  const medicalChannelId = process.env.RESCUE_CHANNEL_ID;
+  const medicalPanelId = process.env.RESCUE_PANEL_ID;
+
+  // Blackhawk panel (new vars; if not provided, it will default to using medical channel)
+  const blackhawkChannelId = process.env.BLACKHAWK_CHANNEL_ID || medicalChannelId;
+  const blackhawkPanelId = process.env.BLACKHAWK_PANEL_ID;
+
+  if (!onDutyChannelId || !medicalChannelId) {
+    console.log("❌ Missing env vars: ON_DUTY_CHANNEL_ID and RESCUE_CHANNEL_ID are required.");
     return;
   }
 
-  const onDutyChannel = await client.channels.fetch(onDutyChannelId).catch(() => null);
-  const opsChannel = await client.channels.fetch(opsChannelId).catch(() => null);
+  const dutyChannel = await client.channels.fetch(onDutyChannelId).catch(() => null);
+  const medicalChannel = await client.channels.fetch(medicalChannelId).catch(() => null);
+  const blackhawkChannel = await client.channels.fetch(blackhawkChannelId).catch(() => null);
 
-  if (!onDutyChannel || !onDutyChannel.isTextBased()) {
+  if (!dutyChannel || !dutyChannel.isTextBased()) {
     console.log("❌ Could not access ON_DUTY_CHANNEL_ID.");
     return;
   }
-  if (!opsChannel || !opsChannel.isTextBased()) {
+  if (!medicalChannel || !medicalChannel.isTextBased()) {
     console.log("❌ Could not access RESCUE_CHANNEL_ID.");
     return;
   }
-
-  const dutyMsg = await onDutyChannel.messages.fetch(dutyPanelId).catch(() => null);
-  if (dutyMsg) {
-    await dutyMsg.edit({ embeds: [buildDutyEmbed(onDutyChannel.guild)], components: [dutyButtonsRow()] });
-    console.log("✅ Updated Duty panel (On/Off buttons).");
-  } else {
-    console.log("❌ Could not fetch Duty panel message (check ON_DUTY_PANEL_ID).");
+  if (!blackhawkChannel || !blackhawkChannel.isTextBased()) {
+    console.log("❌ Could not access BLACKHAWK_CHANNEL_ID (or fallback).");
+    return;
   }
 
-  const opsMsg = await opsChannel.messages.fetch(opsPanelId).catch(() => null);
-  if (opsMsg) {
-    await opsMsg.edit({ embeds: [buildOpsEmbed()], components: [opsButtonsRow()] });
-    console.log("✅ Updated Ops panel (Extraction + Recon).");
+  // Update/Create Duty panel message
+  if (onDutyPanelId) {
+    const dutyMsg = await dutyChannel.messages.fetch(onDutyPanelId).catch(() => null);
+    if (dutyMsg) {
+      await dutyMsg.edit({ embeds: [buildDutyEmbed(dutyChannel.guild)], components: [dutyButtonsRow()] });
+      console.log("✅ Updated Duty panel.");
+    } else {
+      console.log("❌ ON_DUTY_PANEL_ID not found. (Wrong message ID?)");
+    }
   } else {
-    console.log("❌ Could not fetch Ops panel message (check RESCUE_PANEL_ID).");
+    const created = await upsertPanelMessage(
+      dutyChannel,
+      null,
+      { embeds: [buildDutyEmbed(dutyChannel.guild)], components: [dutyButtonsRow()] },
+      "Duty"
+    );
+    console.log(`ℹ️ Set Railway variable ON_DUTY_PANEL_ID = ${created.messageId} to prevent duplicates.`);
+  }
+
+  // Update/Create Medical panel message
+  if (medicalPanelId) {
+    const medMsg = await medicalChannel.messages.fetch(medicalPanelId).catch(() => null);
+    if (medMsg) {
+      await medMsg.edit({ embeds: [buildMedicalEmbed()], components: [medicalButtonsRow()] });
+      console.log("✅ Updated Medical/Extraction panel.");
+    } else {
+      console.log("❌ RESCUE_PANEL_ID not found. (Wrong message ID?)");
+    }
+  } else {
+    const created = await upsertPanelMessage(
+      medicalChannel,
+      null,
+      { embeds: [buildMedicalEmbed()], components: [medicalButtonsRow()] },
+      "Medical/Extraction"
+    );
+    console.log(`ℹ️ Set Railway variable RESCUE_PANEL_ID = ${created.messageId} to prevent duplicates.`);
+  }
+
+  // Update/Create Blackhawk panel message (separate “window”)
+  if (blackhawkPanelId) {
+    const bhMsg = await blackhawkChannel.messages.fetch(blackhawkPanelId).catch(() => null);
+    if (bhMsg) {
+      await bhMsg.edit({ embeds: [buildBlackhawkEmbed()], components: [blackhawkButtonsRow()] });
+      console.log("✅ Updated Blackhawk Recon panel.");
+    } else {
+      console.log("❌ BLACKHAWK_PANEL_ID not found. (Wrong message ID?)");
+    }
+  } else {
+    const created = await upsertPanelMessage(
+      blackhawkChannel,
+      null,
+      { embeds: [buildBlackhawkEmbed()], components: [blackhawkButtonsRow()] },
+      "Blackhawk Recon"
+    );
+    console.log(`ℹ️ Set Railway variable BLACKHAWK_PANEL_ID = ${created.messageId} to prevent duplicates.`);
   }
 });
 
-// ---------- Interactions ----------
+// -------------------- INTERACTIONS --------------------
 client.on("interactionCreate", async (interaction) => {
   // BUTTONS
   if (interaction.isButton()) {
     const guild = interaction.guild;
     const member = interaction.member;
 
-    // GO ON DUTY
+    // Duty On
     if (interaction.customId === "go_on_duty") {
       const role = getRoleByName(guild, ON_DUTY_ROLE);
       if (!role) return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
@@ -375,11 +466,11 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "🟢 You are now **ON Duty**.", ephemeral: true });
       } catch (e) {
         console.error("❌ Failed to set ON duty:", e);
-        return interaction.reply({ content: "❌ Could not assign role. Check permissions/role order.", ephemeral: true });
+        return interaction.reply({ content: "❌ Could not assign role. Check role order & permissions.", ephemeral: true });
       }
     }
 
-    // GO OFF DUTY
+    // Duty Off
     if (interaction.customId === "go_off_duty") {
       const role = getRoleByName(guild, ON_DUTY_ROLE);
       if (!role) return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
@@ -394,34 +485,34 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "🔴 You are now **OFF Duty**.", ephemeral: true });
       } catch (e) {
         console.error("❌ Failed to set OFF duty:", e);
-        return interaction.reply({ content: "❌ Could not remove role. Check permissions/role order.", ephemeral: true });
+        return interaction.reply({ content: "❌ Could not remove role. Check role order & permissions.", ephemeral: true });
       }
     }
 
-    // REQUEST EXTRACTION -> MODAL
-    if (interaction.customId === "request_rescue") {
+    // Medical request button -> show modal
+    if (interaction.customId === "request_medical") {
       const existing = guild.channels.cache.find(
-        (c) => c.type === 0 && c.topic === `Rescue ticket for ${interaction.user.id}`
+        (c) => c.type === 0 && c.topic === `Medical ticket for ${interaction.user.id}`
       );
       if (existing) {
-        return interaction.reply({ content: `⚠️ You already have an active rescue ticket: ${existing}`, ephemeral: true });
+        return interaction.reply({ content: `⚠️ You already have an active medical ticket: ${existing}`, ephemeral: true });
       }
-      return interaction.showModal(buildRescueModal());
+      return interaction.showModal(buildMedicalModal());
     }
 
-    // REQUEST RECON -> MODAL
-    if (interaction.customId === "request_recon") {
+    // Blackhawk recon request button -> show modal
+    if (interaction.customId === "request_blackhawk") {
       const existing = guild.channels.cache.find(
-        (c) => c.type === 0 && c.topic === `Recon ticket for ${interaction.user.id}`
+        (c) => c.type === 0 && c.topic === `Blackhawk ticket for ${interaction.user.id}`
       );
       if (existing) {
-        return interaction.reply({ content: `⚠️ You already have an active recon ticket: ${existing}`, ephemeral: true });
+        return interaction.reply({ content: `⚠️ You already have an active Blackhawk ticket: ${existing}`, ephemeral: true });
       }
-      return interaction.showModal(buildReconModal());
+      return interaction.showModal(buildBlackhawkModal());
     }
 
-    // CLAIM (rescue or recon)
-    if (interaction.customId === "claim_rescue" || interaction.customId === "claim_recon") {
+    // Claim buttons
+    if (interaction.customId === "claim_medical" || interaction.customId === "claim_blackhawk") {
       const channel = interaction.channel;
 
       if (channel.topic && channel.topic.includes("CLAIMED_BY:")) {
@@ -432,32 +523,19 @@ client.on("interactionCreate", async (interaction) => {
       const newTopic = `${baseTopic} | CLAIMED_BY:${interaction.user.id}`.slice(0, 1024);
       await channel.setTopic(newTopic).catch(() => {});
 
-      const messages = await channel.messages.fetch({ limit: 25 }).catch(() => null);
-      if (messages) {
-        const oldest = messages.last();
-        if (oldest) {
-          const tag = interaction.customId === "claim_recon" ? "Assigned Recon" : "Assigned Medic";
-          const already = oldest.content.includes(tag);
-          const updatedContent = already
-            ? oldest.content
-            : `${oldest.content}\n\n🩺 **${tag}:** <@${interaction.user.id}>`;
-          await oldest.edit({ content: updatedContent, components: oldest.components }).catch(() => {});
-        }
-      }
-
-      await logEvent(interaction.guild, `🔒 **Ticket Claimed** — <@${interaction.user.id}> claimed ${channel}`);
+      await logEvent(guild, `🔒 **Ticket Claimed** — <@${interaction.user.id}> claimed ${channel}`);
       return interaction.reply({ content: "🔒 Claim confirmed.", ephemeral: true });
     }
 
-    // CLOSE -> REPORT MODAL
-    if (interaction.customId === "close_rescue") return interaction.showModal(buildRescueReportModal());
-    if (interaction.customId === "close_recon") return interaction.showModal(buildReconReportModal());
+    // Close buttons -> show report modals
+    if (interaction.customId === "close_medical") return interaction.showModal(buildMedicalReportModal());
+    if (interaction.customId === "close_blackhawk") return interaction.showModal(buildBlackhawkReportModal());
 
     return;
   }
 
-  // RESCUE REQUEST MODAL SUBMIT
-  if (interaction.isModalSubmit() && interaction.customId === RESCUE_MODAL_ID) {
+  // MEDICAL MODAL SUBMIT
+  if (interaction.isModalSubmit() && interaction.customId === MEDICAL_MODAL_ID) {
     const guild = interaction.guild;
     const onDutyRole = getRoleByName(guild, ON_DUTY_ROLE);
 
@@ -465,23 +543,23 @@ client.on("interactionCreate", async (interaction) => {
       await interaction.deferReply({ ephemeral: true });
 
       const existing = guild.channels.cache.find(
-        (c) => c.type === 0 && c.topic === `Rescue ticket for ${interaction.user.id}`
+        (c) => c.type === 0 && c.topic === `Medical ticket for ${interaction.user.id}`
       );
-      if (existing) return interaction.editReply(`⚠️ You already have an active rescue ticket: ${existing}`);
+      if (existing) return interaction.editReply(`⚠️ You already have an active medical ticket: ${existing}`);
 
-      const name = interaction.fields.getTextInputValue("name");
+      const ign = interaction.fields.getTextInputValue("ign");
       const system = interaction.fields.getTextInputValue("system");
       const planet = interaction.fields.getTextInputValue("planet");
       const hostiles = interaction.fields.getTextInputValue("hostiles");
       const notes = interaction.fields.getTextInputValue("notes") || "—";
 
-      const channelName = `rescue-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 90);
+      const channelName = `medical-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 90);
 
       const channel = await guild.channels.create({
         name: channelName,
         parent: process.env.TICKET_CATEGORY_ID || null,
         type: 0,
-        topic: `Rescue ticket for ${interaction.user.id}`,
+        topic: `Medical ticket for ${interaction.user.id}`,
         permissionOverwrites: [
           { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
           {
@@ -515,75 +593,66 @@ client.on("interactionCreate", async (interaction) => {
         ],
       });
 
-      await channel.permissionOverwrites.edit(guild.members.me.id, {
-        ViewChannel: true,
-        SendMessages: true,
-        ReadMessageHistory: true,
-      });
-
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("claim_rescue").setLabel("🔒 Claim Rescue").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("close_rescue").setLabel("✅ Close Ticket").setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId("claim_medical").setLabel("🔒 Claim").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("close_medical").setLabel("✅ Close Ticket").setStyle(ButtonStyle.Danger)
       );
 
       const details =
-        `🎮 **Name:** ${name}\n` +
+        `🎮 **IGN:** ${ign}\n` +
         `📍 **System:** ${system}\n` +
         `🪐 **Planet/POI:** ${planet}\n` +
         `⚔️ **Hostiles:** ${hostiles}\n` +
         `📝 **Notes:** ${notes}`;
 
-      const activeMedics = getOnDutyCount(guild);
-
-      if (onDutyRole && activeMedics > 0) {
+      if (onDutyRole && getRoleCount(guild, ON_DUTY_ROLE) > 0) {
         await channel.send({
-          content: `🚨 <@&${onDutyRole.id}> Rescue request from <@${interaction.user.id}>\n\n${details}`,
+          content: `🚨 <@&${onDutyRole.id}> **Medical/Extraction Request** from <@${interaction.user.id}>\n\n${details}`,
           components: [row],
         });
       } else {
         await channel.send({
           content:
-            `🚨 Rescue request from <@${interaction.user.id}>\n\n` +
-            `⚠️ **No Phoenix medics are currently On Duty.** Response may be delayed.\n\n` +
-            `${details}`,
+            `🚨 **Medical/Extraction Request** from <@${interaction.user.id}>\n\n` +
+            `⚠️ **No Phoenix medics are currently On Duty.** Response may be delayed.\n\n${details}`,
           components: [row],
         });
       }
 
-      await logEvent(guild, `🆕 **Rescue Opened** — <@${interaction.user.id}> in ${channel}`);
-      return interaction.editReply(`🚑 Rescue channel created: ${channel}`);
+      await logEvent(guild, `🆕 **Medical Ticket Opened** — <@${interaction.user.id}> in ${channel}`);
+      return interaction.editReply(`🩺 Medical ticket created: ${channel}`);
     } catch (e) {
-      console.error("❌ Rescue request modal submit failed:", e);
-      return interaction.reply({ content: "❌ Failed to create rescue ticket. Check logs.", ephemeral: true });
+      console.error("❌ Medical modal submit failed:", e);
+      return interaction.reply({ content: "❌ Failed to create medical ticket. Check logs.", ephemeral: true });
     }
   }
 
-  // RECON REQUEST MODAL SUBMIT
-  if (interaction.isModalSubmit() && interaction.customId === RECON_MODAL_ID) {
+  // BLACKHAWK MODAL SUBMIT
+  if (interaction.isModalSubmit() && interaction.customId === BLACKHAWK_MODAL_ID) {
     const guild = interaction.guild;
-    const reconRole = getRoleByName(guild, RECON_ROLE);
+    const blackhawkRole = getRoleByName(guild, BLACKHAWK_ROLE);
 
     try {
       await interaction.deferReply({ ephemeral: true });
 
       const existing = guild.channels.cache.find(
-        (c) => c.type === 0 && c.topic === `Recon ticket for ${interaction.user.id}`
+        (c) => c.type === 0 && c.topic === `Blackhawk ticket for ${interaction.user.id}`
       );
-      if (existing) return interaction.editReply(`⚠️ You already have an active recon ticket: ${existing}`);
+      if (existing) return interaction.editReply(`⚠️ You already have an active Blackhawk ticket: ${existing}`);
 
-      const name = interaction.fields.getTextInputValue("Name");
+      const ign = interaction.fields.getTextInputValue("ign");
       const system = interaction.fields.getTextInputValue("system");
       const location = interaction.fields.getTextInputValue("location");
       const objective = interaction.fields.getTextInputValue("objective");
       const hostiles = interaction.fields.getTextInputValue("hostiles");
 
-      const channelName = `recon-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 90);
+      const channelName = `bh-recon-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 90);
 
       const channel = await guild.channels.create({
         name: channelName,
-        parent: process.env.RECON_CATEGORY_ID || null,
+        parent: process.env.BLACKHAWK_CATEGORY_ID || null,
         type: 0,
-        topic: `Recon ticket for ${interaction.user.id}`,
+        topic: `Blackhawk ticket for ${interaction.user.id}`,
         permissionOverwrites: [
           { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
           {
@@ -602,10 +671,10 @@ client.on("interactionCreate", async (interaction) => {
               PermissionsBitField.Flags.ReadMessageHistory,
             ],
           },
-          ...(reconRole
+          ...(blackhawkRole
             ? [
                 {
-                  id: reconRole.id,
+                  id: blackhawkRole.id,
                   allow: [
                     PermissionsBitField.Flags.ViewChannel,
                     PermissionsBitField.Flags.SendMessages,
@@ -617,55 +686,48 @@ client.on("interactionCreate", async (interaction) => {
         ],
       });
 
-      await channel.permissionOverwrites.edit(guild.members.me.id, {
-        ViewChannel: true,
-        SendMessages: true,
-        ReadMessageHistory: true,
-      });
-
       const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("claim_recon").setLabel("🔒 Claim Recon").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("close_recon").setLabel("✅ Close Recon").setStyle(ButtonStyle.Danger)
+        new ButtonBuilder().setCustomId("claim_blackhawk").setLabel("🔒 Claim").setStyle(ButtonStyle.Primary),
+        new ButtonBuilder().setCustomId("close_blackhawk").setLabel("✅ Close Ticket").setStyle(ButtonStyle.Danger)
       );
 
       const details =
-        `🎮 **Name:** ${name}\n` +
+        `🎮 **IGN:** ${ign}\n` +
         `📍 **System:** ${system}\n` +
         `📌 **Location/POI:** ${location}\n` +
         `🎯 **Objective:** ${objective}\n` +
         `⚔️ **Hostiles:** ${hostiles}`;
 
-      if (reconRole) {
+      if (blackhawkRole) {
         await channel.send({
-          content: `🛰️ <@&${reconRole.id}> Recon request from <@${interaction.user.id}>\n\n${details}`,
+          content: `🛰️ <@&${blackhawkRole.id}> **Blackhawk Recon Request** from <@${interaction.user.id}>\n\n${details}`,
           components: [row],
         });
       } else {
         await channel.send({
           content:
-            `🛰️ Recon request from <@${interaction.user.id}>\n\n` +
-            `⚠️ **Recon role not found (${RECON_ROLE}).** Create the role to enable pings.\n\n` +
-            `${details}`,
+            `🛰️ **Blackhawk Recon Request** from <@${interaction.user.id}>\n\n` +
+            `⚠️ **Role not found:** "${BLACKHAWK_ROLE}" (create it to enable pings)\n\n${details}`,
           components: [row],
         });
       }
 
-      await logEvent(guild, `🆕 **Recon Opened** — <@${interaction.user.id}> in ${channel}`);
-      return interaction.editReply(`🛰️ Recon channel created: ${channel}`);
+      await logEvent(guild, `🆕 **Blackhawk Ticket Opened** — <@${interaction.user.id}> in ${channel}`);
+      return interaction.editReply(`🛰️ Blackhawk recon ticket created: ${channel}`);
     } catch (e) {
-      console.error("❌ Recon request modal submit failed:", e);
-      return interaction.reply({ content: "❌ Failed to create recon ticket. Check logs.", ephemeral: true });
+      console.error("❌ Blackhawk modal submit failed:", e);
+      return interaction.reply({ content: "❌ Failed to create Blackhawk ticket. Check logs.", ephemeral: true });
     }
   }
 
-  // RESCUE REPORT MODAL SUBMIT
-  if (interaction.isModalSubmit() && interaction.customId === RESCUE_REPORT_MODAL_ID) {
+  // MEDICAL REPORT SUBMIT
+  if (interaction.isModalSubmit() && interaction.customId === MEDICAL_REPORT_MODAL_ID) {
     try {
       await interaction.deferReply({ ephemeral: true });
 
       const channel = interaction.channel;
       const guild = interaction.guild;
-      const { requesterId, claimedById } = parseTicketInfo(channel);
+      const info = parseTicketInfo(channel);
 
       const outcome = interaction.fields.getTextInputValue("outcome");
       const summary = interaction.fields.getTextInputValue("summary");
@@ -674,10 +736,10 @@ client.on("interactionCreate", async (interaction) => {
 
       await logEvent(
         guild,
-        `📝 **Rescue Report Submitted**\n` +
+        `📝 **Medical/Extraction Report**\n` +
           `• **Ticket:** ${channel}\n` +
-          `• **Requester:** ${requesterId ? `<@${requesterId}>` : "Unknown"}\n` +
-          `• **Assigned:** ${claimedById ? `<@${claimedById}>` : "Unassigned"}\n` +
+          `• **Requester:** ${info.requesterId ? `<@${info.requesterId}>` : "Unknown"}\n` +
+          `• **Assigned:** ${info.claimedById ? `<@${info.claimedById}>` : "Unassigned"}\n` +
           `• **Submitted By:** <@${interaction.user.id}>\n` +
           `• **Outcome:** ${outcome}\n` +
           `• **Threats:** ${threats}\n` +
@@ -685,23 +747,23 @@ client.on("interactionCreate", async (interaction) => {
           `• **Notes:** ${lessons}`
       );
 
-      await interaction.editReply("✅ Rescue report submitted. Closing ticket in 5 seconds...");
+      await interaction.editReply("✅ Report submitted. Closing ticket in 5 seconds...");
       setTimeout(() => channel.delete().catch(() => {}), 5000);
       return;
     } catch (e) {
-      console.error("❌ Rescue report modal submit failed:", e);
-      return interaction.reply({ content: "❌ Rescue report failed. Check logs.", ephemeral: true });
+      console.error("❌ Medical report submit failed:", e);
+      return interaction.reply({ content: "❌ Report failed. Check logs.", ephemeral: true });
     }
   }
 
-  // RECON REPORT MODAL SUBMIT
-  if (interaction.isModalSubmit() && interaction.customId === RECON_REPORT_MODAL_ID) {
+  // BLACKHAWK REPORT SUBMIT
+  if (interaction.isModalSubmit() && interaction.customId === BLACKHAWK_REPORT_MODAL_ID) {
     try {
       await interaction.deferReply({ ephemeral: true });
 
       const channel = interaction.channel;
       const guild = interaction.guild;
-      const { requesterId, claimedById } = parseTicketInfo(channel);
+      const info = parseTicketInfo(channel);
 
       const outcome = interaction.fields.getTextInputValue("outcome");
       const intel = interaction.fields.getTextInputValue("intel");
@@ -710,10 +772,10 @@ client.on("interactionCreate", async (interaction) => {
 
       await logEvent(
         guild,
-        `🛰️ **Recon Report Submitted**\n` +
+        `🛰️ **Blackhawk Recon Report**\n` +
           `• **Ticket:** ${channel}\n` +
-          `• **Requester:** ${requesterId ? `<@${requesterId}>` : "Unknown"}\n` +
-          `• **Assigned:** ${claimedById ? `<@${claimedById}>` : "Unassigned"}\n` +
+          `• **Requester:** ${info.requesterId ? `<@${info.requesterId}>` : "Unknown"}\n` +
+          `• **Assigned:** ${info.claimedById ? `<@${info.claimedById}>` : "Unassigned"}\n` +
           `• **Submitted By:** <@${interaction.user.id}>\n` +
           `• **Outcome:** ${outcome}\n` +
           `• **Threats:** ${threats}\n` +
@@ -721,17 +783,17 @@ client.on("interactionCreate", async (interaction) => {
           `• **Next Action:** ${next}`
       );
 
-      await interaction.editReply("✅ Recon report submitted. Closing ticket in 5 seconds...");
+      await interaction.editReply("✅ Report submitted. Closing ticket in 5 seconds...");
       setTimeout(() => channel.delete().catch(() => {}), 5000);
       return;
     } catch (e) {
-      console.error("❌ Recon report modal submit failed:", e);
-      return interaction.reply({ content: "❌ Recon report failed. Check logs.", ephemeral: true });
+      console.error("❌ Blackhawk report submit failed:", e);
+      return interaction.reply({ content: "❌ Report failed. Check logs.", ephemeral: true });
     }
   }
 });
 
-// ---------- Login ----------
+// -------------------- LOGIN --------------------
 const token = process.env.TOKEN;
 if (!token || token.trim().length < 20) {
   console.error("❌ TOKEN env var missing or looks wrong. Set Railway Variable TOKEN and redeploy.");
