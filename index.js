@@ -62,9 +62,9 @@ function buildOpsEmbed() {
     description:
       "Use the buttons below to open a **private ticket**.\n\n" +
       "**Extraction / Medical**:\n" +
-      "• IGN • System • Planet/POI • Hostiles • Notes\n\n" +
+      "• Name • System • Planet/POI • Hostiles • Notes\n\n" +
       "**Recon**:\n" +
-      "• IGN • System • Location/POI • Objective • Hostiles",
+      "• Name • System • Location/POI • Objective",
     color: 0x6a0dad,
     footer: { text: "Phoenix Response System" },
   };
@@ -123,9 +123,9 @@ function opsButtonsRow() {
 function buildRescueModal() {
   const modal = new ModalBuilder().setCustomId(RESCUE_MODAL_ID).setTitle("Phoenix Rescue Request");
 
-  const ign = new TextInputBuilder()
-    .setCustomId("ign")
-    .setLabel("In-game name (IGN)")
+  const name = new TextInputBuilder()
+    .setCustomId("Name")
+    .setLabel("In-game name (Name)")
     .setStyle(TextInputStyle.Short)
     .setPlaceholder("e.g., Bob Rogers")
     .setRequired(true);
@@ -134,14 +134,14 @@ function buildRescueModal() {
     .setCustomId("system")
     .setLabel("System")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g., Stanton, Pyro")
+    .setPlaceholder("Nyx, Pyro, Stanton")
     .setRequired(true);
 
   const planet = new TextInputBuilder()
     .setCustomId("planet")
     .setLabel("Planet / Moon / POI")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g., Hurston, Daymar, Ruin Station")
+    .setPlaceholder("Hurston, Daymar, Ruin Station")
     .setRequired(true);
 
   const hostiles = new TextInputBuilder()
@@ -172,18 +172,18 @@ function buildRescueModal() {
 function buildReconModal() {
   const modal = new ModalBuilder().setCustomId(RECON_MODAL_ID).setTitle("Phoenix Recon Request");
 
-  const ign = new TextInputBuilder()
-    .setCustomId("ign")
-    .setLabel("In-game name (IGN)")
+  const name = new TextInputBuilder()
+    .setCustomId("Name")
+    .setLabel("Name")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g., MikeOrtiz")
+    .setPlaceholder("e.g., Bob Rogers)
     .setRequired(true);
 
   const system = new TextInputBuilder()
     .setCustomId("system")
     .setLabel("System")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g., Stanton, Pyro")
+    .setPlaceholder("Nyx, Pyro, Stanton")
     .setRequired(true);
 
   const location = new TextInputBuilder()
@@ -208,7 +208,7 @@ function buildReconModal() {
     .setRequired(true);
 
   modal.addComponents(
-    new ActionRowBuilder().addComponents(ign),
+    new ActionRowBuilder().addComponents(Name),
     new ActionRowBuilder().addComponents(system),
     new ActionRowBuilder().addComponents(location),
     new ActionRowBuilder().addComponents(objective),
@@ -469,7 +469,7 @@ client.on("interactionCreate", async (interaction) => {
       );
       if (existing) return interaction.editReply(`⚠️ You already have an active rescue ticket: ${existing}`);
 
-      const ign = interaction.fields.getTextInputValue("ign");
+      const name = interaction.fields.getTextInputValue("name");
       const system = interaction.fields.getTextInputValue("system");
       const planet = interaction.fields.getTextInputValue("planet");
       const hostiles = interaction.fields.getTextInputValue("hostiles");
@@ -527,7 +527,7 @@ client.on("interactionCreate", async (interaction) => {
       );
 
       const details =
-        `🎮 **IGN:** ${ign}\n` +
+        `🎮 **Name:** ${name}\n` +
         `📍 **System:** ${system}\n` +
         `🪐 **Planet/POI:** ${planet}\n` +
         `⚔️ **Hostiles:** ${hostiles}\n` +
@@ -571,7 +571,7 @@ client.on("interactionCreate", async (interaction) => {
       );
       if (existing) return interaction.editReply(`⚠️ You already have an active recon ticket: ${existing}`);
 
-      const ign = interaction.fields.getTextInputValue("ign");
+      const name = interaction.fields.getTextInputValue("Name");
       const system = interaction.fields.getTextInputValue("system");
       const location = interaction.fields.getTextInputValue("location");
       const objective = interaction.fields.getTextInputValue("objective");
@@ -629,7 +629,7 @@ client.on("interactionCreate", async (interaction) => {
       );
 
       const details =
-        `🎮 **IGN:** ${ign}\n` +
+        `🎮 **Name:** ${name}\n` +
         `📍 **System:** ${system}\n` +
         `📌 **Location/POI:** ${location}\n` +
         `🎯 **Objective:** ${objective}\n` +
