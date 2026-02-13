@@ -175,7 +175,7 @@ function buildMedicalModal() {
     .setCustomId("ign")
     .setLabel("In-game name (IGN)")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g., MikeOrtiz")
+    .setPlaceholder("e.g., Bob")
     .setRequired(true);
 
   const system = new TextInputBuilder()
@@ -224,7 +224,7 @@ function buildBlackhawkModal() {
     .setCustomId("ign")
     .setLabel("In-game name (IGN)")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g., MikeOrtiz")
+    .setPlaceholder("e.g., Bob")
     .setRequired(true);
 
   const system = new TextInputBuilder()
