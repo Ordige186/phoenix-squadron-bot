@@ -176,7 +176,7 @@ function buildReconModal() {
     .setCustomId("Name")
     .setLabel("Name")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g., Bob Rogers)
+    .setPlaceholder("e.g., Bob)
     .setRequired(true);
 
   const system = new TextInputBuilder()
