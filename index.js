@@ -216,9 +216,18 @@ client.once("ready", async () => {
     return;
   }
 
-  const dutyRow = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("toggle_duty").setLabel("Toggle On/Off Duty").setStyle(ButtonStyle.Secondary)
-  );
+const dutyRow = new ActionRowBuilder().addComponents(
+  new ButtonBuilder()
+    .setCustomId("go_on_duty")
+    .setLabel("🟢 Go On Duty")
+    .setStyle(ButtonStyle.Success),
+
+  new ButtonBuilder()
+    .setCustomId("go_off_duty")
+    .setLabel("🔴 Go Off Duty")
+    .setStyle(ButtonStyle.Danger)
+);
+
 
   const rescueRow = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId("request_rescue").setLabel("Request Extraction").setStyle(ButtonStyle.Danger)
@@ -250,7 +259,46 @@ client.on("interactionCreate", async (interaction) => {
     const role = guild.roles.cache.find((r) => r.name === ON_DUTY_ROLE);
 
     // TOGGLE DUTY
-    if (interaction.customId === "toggle_duty") {
+   // GO ON DUTY
+if (interaction.customId === "go_on_duty") {
+  const role = guild.roles.cache.find(r => r.name === ON_DUTY_ROLE);
+  if (!role)
+    return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
+
+  if (member.roles.cache.has(role.id)) {
+    return interaction.reply({ content: "🟢 You are already ON Duty.", ephemeral: true });
+  }
+
+  try {
+    await member.roles.add(role);
+    await refreshDutyPanel();
+    return interaction.reply({ content: "🟢 You are now ON Duty.", ephemeral: true });
+  } catch (e) {
+    console.error("Failed to add duty role:", e);
+    return interaction.reply({ content: "❌ Could not assign role. Check permissions.", ephemeral: true });
+  }
+}
+
+// GO OFF DUTY
+if (interaction.customId === "go_off_duty") {
+  const role = guild.roles.cache.find(r => r.name === ON_DUTY_ROLE);
+  if (!role)
+    return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
+
+  if (!member.roles.cache.has(role.id)) {
+    return interaction.reply({ content: "🔴 You are already OFF Duty.", ephemeral: true });
+  }
+
+  try {
+    await member.roles.remove(role);
+    await refreshDutyPanel();
+    return interaction.reply({ content: "🔴 You are now OFF Duty.", ephemeral: true });
+  } catch (e) {
+    console.error("Failed to remove duty role:", e);
+    return interaction.reply({ content: "❌ Could not remove role. Check permissions.", ephemeral: true });
+  }
+}
+
       if (!role) return interaction.reply({ content: "❌ Role not found: Phoenix On Duty", ephemeral: true });
 
       try {
