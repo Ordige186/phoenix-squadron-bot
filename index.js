@@ -127,7 +127,7 @@ function buildRescueModal() {
     .setCustomId("ign")
     .setLabel("In-game name (IGN)")
     .setStyle(TextInputStyle.Short)
-    .setPlaceholder("e.g., MikeOrtiz")
+    .setPlaceholder("e.g., Bob Rogers")
     .setRequired(true);
 
   const system = new TextInputBuilder()
